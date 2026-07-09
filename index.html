@@ -523,11 +523,17 @@
     box-shadow:0 12px 36px rgba(0,0,0,0.35); background:#000;
   }
   #video-modal-bg.show{ display:block; }
+  #video-modal-drag{
+    height:20px; display:flex; align-items:center; justify-content:center;
+    background:#111; color:rgba(255,255,255,0.4); font-size:11px; letter-spacing:2px;
+    cursor:grab; user-select:none; touch-action:none;
+  }
+  #video-modal-drag:active{ cursor:grabbing; background:#1a1a1a; }
   #video-modal-bg #camera-modal{
     position:relative; width:100%; display:flex; flex-direction:column;
   }
   #video-modal-bg #video-preview{
-    width:100%; aspect-ratio:3/4; object-fit:cover; background:#111; display:block;
+    width:100%; aspect-ratio:16/9; object-fit:cover; background:#111; display:block;
   }
   #video-modal-bg #video-modal-timer{
     position:absolute; top:8px; left:8px; margin:0;
@@ -819,6 +825,7 @@
 
 <div id="video-modal-bg">
   <div id="camera-modal">
+    <div id="video-modal-drag" title="Arrastrá para mover">⋮⋮</div>
     <video id="video-preview" autoplay playsinline muted></video>
     <div id="video-modal-timer">00:00</div>
     <div id="camera-controls">
@@ -2736,6 +2743,41 @@ const videoPreviewEl = document.getElementById('video-preview');
 const videoTimerEl = document.getElementById('video-modal-timer');
 const videoRecBtn = document.getElementById('video-rec-btn');
 
+// arrastrar libremente la ventanita de grabación (antes y durante grabar)
+const videoModalDragHandle = document.getElementById('video-modal-drag');
+let videoModalDragging = false, videoModalDragStartX = 0, videoModalDragStartY = 0;
+let videoModalOrigLeft = 0, videoModalOrigTop = 0;
+videoModalDragHandle.addEventListener('pointerdown', (e)=>{
+  videoModalDragging = true;
+  const rect = videoModalBg.getBoundingClientRect();
+  // pasar de anclaje right/bottom a left/top para poder moverla libremente
+  videoModalBg.style.left = rect.left + 'px';
+  videoModalBg.style.top = rect.top + 'px';
+  videoModalBg.style.right = 'auto';
+  videoModalBg.style.bottom = 'auto';
+  videoModalOrigLeft = rect.left;
+  videoModalOrigTop = rect.top;
+  videoModalDragStartX = e.clientX;
+  videoModalDragStartY = e.clientY;
+  videoModalDragHandle.setPointerCapture(e.pointerId);
+  e.preventDefault();
+});
+videoModalDragHandle.addEventListener('pointermove', (e)=>{
+  if(!videoModalDragging) return;
+  const dx = e.clientX - videoModalDragStartX;
+  const dy = e.clientY - videoModalDragStartY;
+  const maxLeft = window.innerWidth - videoModalBg.offsetWidth - 4;
+  const maxTop = window.innerHeight - videoModalBg.offsetHeight - 4;
+  videoModalBg.style.left = Math.min(maxLeft, Math.max(4, videoModalOrigLeft + dx)) + 'px';
+  videoModalBg.style.top = Math.min(maxTop, Math.max(4, videoModalOrigTop + dy)) + 'px';
+});
+function stopVideoModalDrag(e){
+  videoModalDragging = false;
+  try{ videoModalDragHandle.releasePointerCapture(e.pointerId); }catch(_){}
+}
+videoModalDragHandle.addEventListener('pointerup', stopVideoModalDrag);
+videoModalDragHandle.addEventListener('pointercancel', stopVideoModalDrag);
+
 async function openVideoModal(card, el){
   videoModalTarget = { card, el };
   videoModalBg.classList.add('show');
@@ -2755,6 +2797,15 @@ async function startVideoPreviewStream(){
       audio:true
     });
     videoPreviewEl.srcObject = videoModalStream;
+    // ajustar la proporción de la ventanita a la resolución REAL que devolvió
+    // la cámara, para que se vea exactamente como va a quedar grabado
+    const track = videoModalStream.getVideoTracks()[0];
+    if(track){
+      const settings = track.getSettings ? track.getSettings() : {};
+      if(settings.width && settings.height){
+        videoPreviewEl.style.aspectRatio = `${settings.width} / ${settings.height}`;
+      }
+    }
   }catch(err){
     setStatus('No se pudo acceder a la cámara: ' + (err.name || err.message));
     closeVideoModal();
