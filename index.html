@@ -304,6 +304,8 @@
   .card.audio .spotify-embed{ width:100%; height:152px; border:none; border-radius:8px; margin-top:6px; }
   .card.audio .soundcloud-embed{ width:100%; height:120px; border:none; border-radius:6px; margin-top:6px; }
   .card.video iframe{ width:100%; border-radius:6px; aspect-ratio:16/9; margin-top:6px; border:none; display:block; }
+  .card.video .yt-embed-container{ width:100%; aspect-ratio:16/9; border-radius:6px; margin-top:6px; overflow:hidden; background:#000; }
+  .card.video .yt-embed-container iframe{ width:100%; height:100%; border:none; display:block; }
   .card.video video{
     width:100%; border-radius:6px; margin-top:6px; border:none;
     max-height:55vh; cursor:pointer; display:block;
@@ -503,15 +505,56 @@
 
   /* modal de mezcla base + voz */
   /* todos los modal-bg tienen la misma base */
-  #modal-bg, #spotify-modal-bg, #auth-modal-bg, #camera-modal-bg, #video-modal-bg{
+  #modal-bg, #spotify-modal-bg, #auth-modal-bg, #camera-modal-bg{
     position:fixed; inset:0; z-index:150; display:none; align-items:center; justify-content:center;
     background:rgba(20,20,20,0.4);
   }
-  #camera-modal-bg, #video-modal-bg{ background:#000; z-index:200; flex-direction:column; }
+  #camera-modal-bg{ background:#000; z-index:200; flex-direction:column; }
   #auth-modal-bg{ z-index:210; background:rgba(20,20,20,0.55); }
   #auth-modal-bg .modal-box input{ margin-bottom:10px; }
   #modal-bg.show, #spotify-modal-bg.show, #auth-modal-bg.show,
-  #camera-modal-bg.show, #video-modal-bg.show{ display:flex; }
+  #camera-modal-bg.show{ display:flex; }
+
+  /* grabación de video: ventanita flotante que deja ver el resto del tablero,
+     para poder leer letras/notas mientras se graba interpretando algo */
+  #video-modal-bg{
+    position:fixed; right:16px; bottom:16px; z-index:120; display:none;
+    width:260px; border-radius:14px; overflow:hidden;
+    box-shadow:0 12px 36px rgba(0,0,0,0.35); background:#000;
+  }
+  #video-modal-bg.show{ display:block; }
+  #video-modal-bg #camera-modal{
+    position:relative; width:100%; display:flex; flex-direction:column;
+  }
+  #video-modal-bg #video-preview{
+    width:100%; aspect-ratio:3/4; object-fit:cover; background:#111; display:block;
+  }
+  #video-modal-bg #video-modal-timer{
+    position:absolute; top:8px; left:8px; margin:0;
+    font-family:'JetBrains Mono',monospace; font-size:13px; font-weight:700; color:#fff;
+    background:rgba(0,0,0,0.5); padding:3px 10px; border-radius:14px; letter-spacing:1px;
+    display:none;
+  }
+  #video-modal-bg #video-modal-timer.visible{ display:block; }
+  #video-modal-bg #camera-controls{
+    display:flex; align-items:center; justify-content:center; gap:14px;
+    padding:10px; background:#111;
+  }
+  #video-modal-bg #video-rec-btn{
+    width:44px; height:44px; border-radius:50%; border:3px solid #fff;
+    background:rgba(255,255,255,0.15); color:#fff; font-size:18px; cursor:pointer;
+    flex:none; transition:background .12s, border-color .12s;
+  }
+  #video-modal-bg #video-rec-btn.recording{ background:var(--danger); border-color:var(--danger); animation:pulse 1s infinite; }
+  #video-modal-bg .btn{
+    background:transparent; border:1px solid rgba(255,255,255,0.3); color:#fff;
+    padding:6px 10px; font-size:12px;
+  }
+  #video-modal-bg .btn:hover{ background:rgba(255,255,255,0.12); }
+  #video-modal-bg #camera-status{
+    position:static; padding:4px 8px 8px; font-size:11px; color:rgba(255,255,255,0.6);
+    text-align:center; background:#111;
+  }
 
   /* barra de grabación con base (inferior, no tapa el tablero) */
   #mix-bar{
@@ -777,12 +820,12 @@
 <div id="video-modal-bg">
   <div id="camera-modal">
     <video id="video-preview" autoplay playsinline muted></video>
-    <div id="camera-controls">
-      <button class="btn" id="video-cancel">Cancelar</button>
-      <button id="video-rec-btn">●</button>
-      <button class="btn" id="video-flip">↩ Voltear</button>
-    </div>
     <div id="video-modal-timer">00:00</div>
+    <div id="camera-controls">
+      <button class="btn" id="video-cancel">Cerrar</button>
+      <button id="video-rec-btn">●</button>
+      <button class="btn" id="video-flip">↩</button>
+    </div>
     <div id="camera-status" style="position:absolute;bottom:8px;left:0;right:0;text-align:center;" id="video-status"></div>
   </div>
 </div>
@@ -1253,6 +1296,72 @@ function youtubeId(url){
   const m = url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([\w-]{11})/);
   return m ? m[1] : null;
 }
+
+/* ---- reproductor de YouTube con recorte real (usando la API oficial) ----
+   El parámetro start/end de un link común solo sugiere un punto de arranque,
+   pero no impide scrollear a cualquier otra parte. Para que el "Hasta" y el
+   "Desde" realmente limiten lo que se puede ver, usamos la API programable
+   de YouTube: mientras se reproduce, controlamos el tiempo actual y si se
+   pasa del límite (o lo scrollean antes del inicio) lo corregimos solos. */
+let ytApiReady = false;
+let ytApiLoading = false;
+const ytPendingPlayers = []; // [{divId, videoId, start, end}]
+const ytTrimTimers = new Map(); // cardId -> intervalId
+
+function loadYoutubeApi(){
+  if(ytApiReady || ytApiLoading) return;
+  ytApiLoading = true;
+  const tag = document.createElement('script');
+  tag.src = 'https://www.youtube.com/iframe_api';
+  document.head.appendChild(tag);
+  window.onYouTubeIframeAPIReady = function(){
+    ytApiReady = true;
+    ytPendingPlayers.forEach(p => initYTPlayer(p.divId, p.videoId, p.start, p.end, p.cardId));
+    ytPendingPlayers.length = 0;
+  };
+}
+
+function stopYTTrimTimer(cardId){
+  if(ytTrimTimers.has(cardId)){
+    clearInterval(ytTrimTimers.get(cardId));
+    ytTrimTimers.delete(cardId);
+  }
+}
+
+function initYTPlayer(divId, videoId, start, end, cardId){
+  if(!ytApiReady){
+    ytPendingPlayers.push({divId, videoId, start, end, cardId});
+    loadYoutubeApi();
+    return;
+  }
+  const container = document.getElementById(divId);
+  if(!container || typeof YT === 'undefined' || !YT.Player) return;
+
+  let player;
+  player = new YT.Player(divId, {
+    videoId,
+    playerVars: { start: start || 0, rel: 0 },
+    events: {
+      onStateChange: (ev)=>{
+        stopYTTrimTimer(cardId);
+        if(ev.data === YT.PlayerState.PLAYING){
+          const t = ytTrimTimers.set(cardId, setInterval(()=>{
+            try{
+              const now = player.getCurrentTime();
+              if(end && now >= end - 0.2){
+                player.pauseVideo();
+                player.seekTo(start || 0, true);
+                stopYTTrimTimer(cardId);
+              } else if(start && now < start - 1){
+                player.seekTo(start, true);
+              }
+            }catch(e){ stopYTTrimTimer(cardId); }
+          }, 250));
+        }
+      }
+    }
+  });
+}
 function spotifyEmbedSrc(url){
   const m = url.match(/open\.spotify\.com\/(track|album|playlist|episode|show|artist)\/([a-zA-Z0-9]+)/i);
   if(!m) return null;
@@ -1484,7 +1593,9 @@ function buildCardInner(card){
       ${scSrc ? `<iframe src="${scSrc}" class="soundcloud-embed" frameborder="0" allow="autoplay" loading="lazy"></iframe>` : ''}
       ${(card.url && (spotifySrc || scSrc)) ? `<button class="add-more-btn" title="cambiar audio">+</button>` : ''}` ;
   } else if(card.type === 'video'){
+    const ytId = card.url ? youtubeId(card.url) : null;
     const yt = card.url ? youtubeEmbed(card.url, card.ytStart, card.ytEnd) : null;
+    const hasTrim = !!(card.ytStart || card.ytEnd);
     inner += `
       <div class="card-controls">
         <div class="icon-btn-row">
@@ -1506,14 +1617,16 @@ function buildCardInner(card){
         </div>
       </div>
       ${!card.url ? `<div class="card-empty-hint"><span class="card-empty-icon">🎥</span><span class="card-empty-label">Grabá o subí video</span></div>` : ''}
-      ${yt ? `<iframe src="${yt}" frameborder="0" allowfullscreen allow="autoplay"></iframe>` :
-        (card.url ? `<video class="card-video-player" controls src="${card.url}" playsinline></video>` : '')}
+      ${(yt && hasTrim) ? `<div class="yt-embed-container" id="ytplayer-${card.id}" data-video-id="${ytId}"></div>` : ''}
+      ${(yt && !hasTrim) ? `<iframe src="${yt}" frameborder="0" allowfullscreen allow="autoplay"></iframe>` : ''}
+      ${(!yt && card.url) ? `<video class="card-video-player" controls src="${card.url}" playsinline></video>` : ''}
       ${yt ? `
-        <button class="yt-trim-btn" data-role="yttrim" title="Elegir desde/hasta qué momento se reproduce">✂️ Recortar</button>
+        <button class="yt-trim-btn" data-role="yttrim" title="Elegir qué tramo se puede reproducir">✂️ Recortar${hasTrim ? ' ✓' : ''}</button>
         <div class="yt-trim-panel" data-role="yttrimpanel" style="display:none;">
           <label>Desde <input type="text" data-role="yt-from" placeholder="0:00" value="${fmtTimeInput(card.ytStart)}"></label>
           <label>Hasta <input type="text" data-role="yt-to" placeholder="(fin del video)" value="${fmtTimeInput(card.ytEnd)}"></label>
           <button class="btn primary" data-role="yt-trim-apply">Aplicar</button>
+          ${hasTrim ? `<button class="btn" data-role="yt-trim-clear">Quitar recorte</button>` : ''}
         </div>` : ''}
       ${yt ? `<button class="yt-rec-btn" data-role="ytrecord" title="Grabar tu voz mientras suena el beat">🎤 Grabar mi voz</button>` : ''}
       ${card.url ? `<button class="add-more-btn" title="cambiar video">+</button>` : ''}`;
@@ -1902,7 +2015,7 @@ function wireCard(el, card){
     ytRecBtn.addEventListener('click', e=>{ e.stopPropagation(); startYTMicRecord(ytRecBtn); });
   }
 
-  // recortar: elegir desde/hasta qué momento se reproduce el video de YouTube
+  // recortar: elegir qué tramo del video de YouTube se puede reproducir de verdad
   const ytTrimBtn = el.querySelector('[data-role="yttrim"]');
   const ytTrimPanel = el.querySelector('[data-role="yttrimpanel"]');
   if(ytTrimBtn && ytTrimPanel){
@@ -1922,12 +2035,34 @@ function wireCard(el, card){
       if(fromInput.value.trim() && start === null){ setStatus('Formato inválido en "Desde" (usá mm:ss)'); return; }
       if(toInput.value.trim() && end === null){ setStatus('Formato inválido en "Hasta" (usá mm:ss)'); return; }
       if(start != null && end != null && end <= start){ setStatus('"Hasta" tiene que ser mayor que "Desde"'); return; }
-      card.ytStart = start || null;
+      if(!start && !end){ setStatus('Poné al menos "Desde" o "Hasta" para recortar'); return; }
+      stopYTTrimTimer(card.id);
+      card.ytStart = start || 0;
       card.ytEnd = end || null;
       scheduleSaveCards();
       replaceCardEl(card, el);
-      setStatus('Recorte aplicado ✓');
+      setStatus('Recorte aplicado — el video no va a poder verse fuera de ese tramo ✓');
     });
+    const clearBtn = ytTrimPanel.querySelector('[data-role="yt-trim-clear"]');
+    if(clearBtn){
+      clearBtn.addEventListener('click', e=>{
+        e.stopPropagation();
+        stopYTTrimTimer(card.id);
+        card.ytStart = null;
+        card.ytEnd = null;
+        scheduleSaveCards();
+        replaceCardEl(card, el);
+        setStatus('Recorte quitado');
+      });
+    }
+  }
+
+  // si esta tarjeta tiene un recorte real configurado, iniciar el reproductor
+  // programable de YouTube que hace cumplir el tramo elegido
+  const ytEmbedContainer = el.querySelector('.yt-embed-container');
+  if(ytEmbedContainer){
+    const vid = ytEmbedContainer.dataset.videoId;
+    if(vid) initYTPlayer(ytEmbedContainer.id, vid, card.ytStart || 0, card.ytEnd || null, card.id);
   }
 
   // tap en video para verlo en pantalla completa
@@ -3030,6 +3165,7 @@ document.addEventListener('keydown', (e)=>{
       clearMultiSelection();
       cards = cards.filter(c=>!toDelete.has(c.id));
       toDelete.forEach(id=>{
+        stopYTTrimTimer(id);
         const el = canvas.querySelector(`[data-id="${id}"]`);
         if(el) el.remove();
       });
@@ -3041,6 +3177,7 @@ document.addEventListener('keydown', (e)=>{
     // borrar tarjeta individual seleccionada
     if(!selectedCardId) return;
     e.preventDefault();
+    stopYTTrimTimer(selectedCardId);
     const el = canvas.querySelector(`[data-id="${selectedCardId}"]`);
     cards = cards.filter(c=>c.id !== selectedCardId);
     if(el) el.remove();
