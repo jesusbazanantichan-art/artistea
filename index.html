@@ -505,24 +505,32 @@
 
   /* modal de mezcla base + voz */
   /* todos los modal-bg tienen la misma base */
-  #modal-bg, #spotify-modal-bg, #auth-modal-bg, #camera-modal-bg{
+  #modal-bg, #spotify-modal-bg, #auth-modal-bg, #camera-modal-bg, #reset-password-bg{
     position:fixed; inset:0; z-index:150; display:none; align-items:center; justify-content:center;
     background:rgba(20,20,20,0.4);
   }
   #camera-modal-bg{ background:#000; z-index:200; flex-direction:column; }
   #auth-modal-bg{ z-index:210; background:rgba(20,20,20,0.55); }
+  #reset-password-bg{ z-index:220; background:rgba(20,20,20,0.55); }
   #auth-modal-bg .modal-box input{ margin-bottom:10px; }
+  #auth-forgot-link{
+    display:block; background:none; border:none; padding:0; margin:-6px 0 10px;
+    font-family:'Inter',sans-serif; font-size:12px; color:var(--ink-soft);
+    text-decoration:underline; cursor:pointer; text-align:left;
+  }
+  #auth-forgot-link:hover{ color:var(--ink); }
   #modal-bg.show, #spotify-modal-bg.show, #auth-modal-bg.show,
-  #camera-modal-bg.show{ display:flex; }
+  #camera-modal-bg.show, #reset-password-bg.show{ display:flex; }
 
   /* grabación de video: ventanita flotante que deja ver el resto del tablero,
      para poder leer letras/notas mientras se graba interpretando algo */
   #video-modal-bg{
     position:fixed; right:16px; bottom:16px; z-index:120; display:none;
-    width:260px; border-radius:14px; overflow:hidden;
+    width:260px; min-width:160px; max-width:520px; border-radius:14px; overflow:visible;
     box-shadow:0 12px 36px rgba(0,0,0,0.35); background:#000;
   }
   #video-modal-bg.show{ display:block; }
+  #video-modal-bg #camera-modal{ overflow:hidden; border-radius:14px; }
   #video-modal-drag{
     height:20px; display:flex; align-items:center; justify-content:center;
     background:#111; color:rgba(255,255,255,0.4); font-size:11px; letter-spacing:2px;
@@ -534,6 +542,14 @@
   }
   #video-modal-bg #video-preview{
     width:100%; aspect-ratio:16/9; object-fit:cover; background:#111; display:block;
+  }
+  #video-modal-resize{
+    position:absolute; right:0; bottom:0; width:22px; height:22px;
+    cursor:nwse-resize; touch-action:none; z-index:5;
+  }
+  #video-modal-resize::after{
+    content:''; position:absolute; right:5px; bottom:5px; width:9px; height:9px;
+    border-right:2px solid rgba(255,255,255,0.55); border-bottom:2px solid rgba(255,255,255,0.55);
   }
   #video-modal-bg #video-modal-timer{
     position:absolute; top:8px; left:8px; margin:0;
@@ -742,7 +758,8 @@
     <h3 id="auth-modal-title">Iniciar sesión</h3>
     <input id="auth-email" type="email" placeholder="tu@email.com" autocomplete="email">
     <input id="auth-password" type="password" placeholder="Contraseña" autocomplete="current-password">
-    <div id="auth-error" style="font-size:12px;color:var(--danger);margin:-8px 0 8px;display:none;"></div>
+    <button id="auth-forgot-link" type="button">¿Olvidaste tu contraseña?</button>
+    <div id="auth-error" style="font-size:12px;color:var(--danger);margin:-4px 0 8px;display:none;"></div>
     <div class="modal-actions" style="flex-direction:column;gap:8px;">
       <button class="btn primary" id="auth-submit" style="width:100%;">Entrar</button>
       <button class="btn" id="auth-switch" style="width:100%;">¿No tenés cuenta? Registrate</button>
@@ -834,6 +851,7 @@
       <button class="btn" id="video-flip">↩</button>
     </div>
     <div id="camera-status" style="position:absolute;bottom:8px;left:0;right:0;text-align:center;" id="video-status"></div>
+    <div id="video-modal-resize" title="Arrastrá para cambiar el tamaño"></div>
   </div>
 </div>
 
@@ -845,6 +863,17 @@
 <div id="card-expand-bg">
   <button id="card-expand-close">✕</button>
   <div id="card-expand-content"></div>
+</div>
+
+<div id="reset-password-bg">
+  <div class="modal-box" style="width:320px;">
+    <h3>Elegí una contraseña nueva</h3>
+    <input id="reset-password-input" type="password" placeholder="Contraseña nueva" autocomplete="new-password">
+    <div id="reset-password-error" style="font-size:12px;color:var(--danger);margin:-8px 0 8px;display:none;"></div>
+    <div class="modal-actions" style="flex-direction:column;gap:8px;">
+      <button class="btn primary" id="reset-password-submit" style="width:100%;">Guardar contraseña</button>
+    </div>
+  </div>
 </div>
 
 <div id="share-modal-bg">
@@ -2778,6 +2807,37 @@ function stopVideoModalDrag(e){
 videoModalDragHandle.addEventListener('pointerup', stopVideoModalDrag);
 videoModalDragHandle.addEventListener('pointercancel', stopVideoModalDrag);
 
+// cambiar el tamaño de la ventanita arrastrando su esquina — funciona
+// tanto antes de grabar como durante la grabación en curso
+const videoModalResizeHandle = document.getElementById('video-modal-resize');
+let videoModalResizing = false, videoModalResizeStartX = 0, videoModalResizeStartW = 0;
+videoModalResizeHandle.addEventListener('pointerdown', (e)=>{
+  videoModalResizing = true;
+  videoModalResizeStartX = e.clientX;
+  videoModalResizeStartW = videoModalBg.offsetWidth;
+  // si todavía estaba anclada por right/bottom, fijarla en left/top para
+  // que no "salte" de lugar al cambiarle el ancho
+  const rect = videoModalBg.getBoundingClientRect();
+  videoModalBg.style.left = rect.left + 'px';
+  videoModalBg.style.top = rect.top + 'px';
+  videoModalBg.style.right = 'auto';
+  videoModalBg.style.bottom = 'auto';
+  videoModalResizeHandle.setPointerCapture(e.pointerId);
+  e.preventDefault(); e.stopPropagation();
+});
+videoModalResizeHandle.addEventListener('pointermove', (e)=>{
+  if(!videoModalResizing) return;
+  const dx = e.clientX - videoModalResizeStartX;
+  const newW = Math.min(520, Math.max(160, videoModalResizeStartW + dx));
+  videoModalBg.style.width = newW + 'px';
+});
+function stopVideoModalResize(e){
+  videoModalResizing = false;
+  try{ videoModalResizeHandle.releasePointerCapture(e.pointerId); }catch(_){}
+}
+videoModalResizeHandle.addEventListener('pointerup', stopVideoModalResize);
+videoModalResizeHandle.addEventListener('pointercancel', stopVideoModalResize);
+
 async function openVideoModal(card, el){
   videoModalTarget = { card, el };
   videoModalBg.classList.add('show');
@@ -3711,6 +3771,46 @@ document.getElementById('auth-guest').addEventListener('click', ()=>{
 function showAuthModal(){ authModalBg.classList.add('show'); authEmail.focus(); }
 function hideAuthModal(){ authModalBg.classList.remove('show'); authError.style.display='none'; }
 
+async function sbRecoverPassword(email){
+  const r = await fetch(SUPABASE_URL+'/auth/v1/recover', {
+    method:'POST', headers:{'apikey':SUPABASE_KEY,'Content-Type':'application/json'},
+    body: JSON.stringify({ email, options: { redirectTo: window.location.origin + window.location.pathname } })
+  });
+  const d = await r.json().catch(()=>({}));
+  if(!r.ok || d.error || d.error_description || d.msg){
+    throw new Error((d.error && (d.error.message||d.error)) || d.error_description || d.msg || `No se pudo enviar el mail (código ${r.status})`);
+  }
+}
+
+document.getElementById('auth-forgot-link').addEventListener('click', async ()=>{
+  const email = authEmail.value.trim();
+  if(!email){
+    authError.textContent = 'Escribí tu email arriba primero, y volvé a tocar "¿Olvidaste tu contraseña?"';
+    authError.style.display = 'block';
+    authEmail.focus();
+    return;
+  }
+  authError.style.display = 'none';
+  const link = document.getElementById('auth-forgot-link');
+  const originalText = link.textContent;
+  link.textContent = 'Enviando...';
+  link.disabled = true;
+  try{
+    await sbRecoverPassword(email);
+    link.textContent = '¿Olvidaste tu contraseña?';
+    link.disabled = false;
+    authError.style.color = 'var(--ink)';
+    authError.textContent = `Te mandamos un mail a ${email} con un link para elegir una contraseña nueva.`;
+    authError.style.display = 'block';
+  }catch(err){
+    link.textContent = originalText;
+    link.disabled = false;
+    authError.style.color = 'var(--danger)';
+    authError.textContent = err.message || 'No se pudo enviar el mail de recuperación.';
+    authError.style.display = 'block';
+  }
+});
+
 authSwitch.addEventListener('click', ()=>{
   authMode = authMode === 'login' ? 'signup' : 'login';
   authTitle.textContent = authMode === 'login' ? 'Iniciar sesión' : 'Crear cuenta';
@@ -3843,10 +3943,64 @@ async function bootShareView(){
   }
 }
 
+/* ---- recuperar contraseña: detectar el link que llega por mail ---- */
+const resetPasswordBg = document.getElementById('reset-password-bg');
+let recoveryAccessToken = null;
+
+function checkForPasswordRecoveryLink(){
+  // Supabase devuelve el token en el HASH de la url: #access_token=...&type=recovery
+  const hash = window.location.hash.startsWith('#') ? window.location.hash.slice(1) : window.location.hash;
+  const params = new URLSearchParams(hash);
+  if(params.get('type') === 'recovery' && params.get('access_token')){
+    recoveryAccessToken = params.get('access_token');
+    resetPasswordBg.classList.add('show');
+    // limpiar el hash de la url para no dejarlo expuesto ni que se reprocese
+    history.replaceState(null, '', window.location.pathname + window.location.search);
+    return true;
+  }
+  return false;
+}
+
+document.getElementById('reset-password-submit').addEventListener('click', async ()=>{
+  const input = document.getElementById('reset-password-input');
+  const errEl = document.getElementById('reset-password-error');
+  const newPass = input.value;
+  errEl.style.display = 'none';
+  if(!newPass || newPass.length < 6){
+    errEl.textContent = 'La contraseña tiene que tener al menos 6 caracteres.';
+    errEl.style.display = 'block';
+    return;
+  }
+  const btn = document.getElementById('reset-password-submit');
+  btn.disabled = true; btn.textContent = 'Guardando...';
+  try{
+    const r = await fetch(SUPABASE_URL+'/auth/v1/user', {
+      method:'PUT',
+      headers:{
+        'apikey': SUPABASE_KEY,
+        'Authorization': 'Bearer ' + recoveryAccessToken,
+        'Content-Type':'application/json'
+      },
+      body: JSON.stringify({ password: newPass })
+    });
+    const d = await r.json().catch(()=>({}));
+    if(!r.ok || d.error){ throw new Error((d.error && (d.error.message||d.error)) || d.msg || 'No se pudo actualizar la contraseña'); }
+    resetPasswordBg.classList.remove('show');
+    setStatus('Contraseña actualizada ✓ — ya podés iniciar sesión');
+    showAuthModal();
+  }catch(err){
+    errEl.textContent = err.message || 'Error al guardar la contraseña.';
+    errEl.style.display = 'block';
+  }finally{
+    btn.disabled = false; btn.textContent = 'Guardar contraseña';
+  }
+});
+
 async function boot(){
   if(SHARE_MODE){ await bootShareView(); return; }
   setZoom(1);
   centerCanvasView();
+  if(checkForPasswordRecoveryLink()) return; // esperar a que elija la nueva contraseña
   const user = await sbGetUser();
   try{ updateAuthBtn(); }catch(e){ console.error('updateAuthBtn:', e); }
   if(user){
