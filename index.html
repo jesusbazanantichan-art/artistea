@@ -94,6 +94,7 @@
     display:flex; align-items:center; font-family:'Inter',sans-serif; font-weight:500;
     background:transparent; border:none; cursor:pointer;
     color:var(--ink-soft); transition:background .12s, color .12s; white-space:nowrap;
+    touch-action:manipulation;
   }
   .tool-btn:hover{background:#f2f2f2; color:var(--ink);}
   .tool-icon{
@@ -3055,6 +3056,7 @@ function wireVideoRecordButton(card, el){
 
 
 let lastCardCreation = { type: null, time: 0 };
+const CARD_CREATE_DEBOUNCE_MS = 900; // cubre el margen del "clic fantasma" típico en mobile
 
 function addCard(type){
   const scrollEl = document.getElementById('canvas-scroll');
@@ -3072,7 +3074,7 @@ function addCardAt(type, x, y){
   // duplicados, arrastre en mobile, etc.) esta función se llama dos veces
   // seguidas para el mismo tipo, la segunda se ignora
   const now = Date.now();
-  if(lastCardCreation.type === type && (now - lastCardCreation.time) < 500){
+  if(lastCardCreation.type === type && (now - lastCardCreation.time) < CARD_CREATE_DEBOUNCE_MS){
     return;
   }
   lastCardCreation = { type, time: now };
