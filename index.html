@@ -519,10 +519,11 @@
      para poder leer letras/notas mientras se graba interpretando algo */
   #video-modal-bg{
     position:fixed; right:16px; bottom:16px; z-index:120; display:none;
-    width:260px; border-radius:14px; overflow:hidden;
+    width:260px; min-width:160px; max-width:520px; border-radius:14px; overflow:visible;
     box-shadow:0 12px 36px rgba(0,0,0,0.35); background:#000;
   }
   #video-modal-bg.show{ display:block; }
+  #video-modal-bg #camera-modal{ overflow:hidden; border-radius:14px; }
   #video-modal-drag{
     height:20px; display:flex; align-items:center; justify-content:center;
     background:#111; color:rgba(255,255,255,0.4); font-size:11px; letter-spacing:2px;
@@ -534,6 +535,14 @@
   }
   #video-modal-bg #video-preview{
     width:100%; aspect-ratio:16/9; object-fit:cover; background:#111; display:block;
+  }
+  #video-modal-resize{
+    position:absolute; right:0; bottom:0; width:22px; height:22px;
+    cursor:nwse-resize; touch-action:none; z-index:5;
+  }
+  #video-modal-resize::after{
+    content:''; position:absolute; right:5px; bottom:5px; width:9px; height:9px;
+    border-right:2px solid rgba(255,255,255,0.55); border-bottom:2px solid rgba(255,255,255,0.55);
   }
   #video-modal-bg #video-modal-timer{
     position:absolute; top:8px; left:8px; margin:0;
@@ -834,6 +843,7 @@
       <button class="btn" id="video-flip">↩</button>
     </div>
     <div id="camera-status" style="position:absolute;bottom:8px;left:0;right:0;text-align:center;" id="video-status"></div>
+    <div id="video-modal-resize" title="Arrastrá para cambiar el tamaño"></div>
   </div>
 </div>
 
@@ -2777,6 +2787,37 @@ function stopVideoModalDrag(e){
 }
 videoModalDragHandle.addEventListener('pointerup', stopVideoModalDrag);
 videoModalDragHandle.addEventListener('pointercancel', stopVideoModalDrag);
+
+// cambiar el tamaño de la ventanita arrastrando su esquina — funciona
+// tanto antes de grabar como durante la grabación en curso
+const videoModalResizeHandle = document.getElementById('video-modal-resize');
+let videoModalResizing = false, videoModalResizeStartX = 0, videoModalResizeStartW = 0;
+videoModalResizeHandle.addEventListener('pointerdown', (e)=>{
+  videoModalResizing = true;
+  videoModalResizeStartX = e.clientX;
+  videoModalResizeStartW = videoModalBg.offsetWidth;
+  // si todavía estaba anclada por right/bottom, fijarla en left/top para
+  // que no "salte" de lugar al cambiarle el ancho
+  const rect = videoModalBg.getBoundingClientRect();
+  videoModalBg.style.left = rect.left + 'px';
+  videoModalBg.style.top = rect.top + 'px';
+  videoModalBg.style.right = 'auto';
+  videoModalBg.style.bottom = 'auto';
+  videoModalResizeHandle.setPointerCapture(e.pointerId);
+  e.preventDefault(); e.stopPropagation();
+});
+videoModalResizeHandle.addEventListener('pointermove', (e)=>{
+  if(!videoModalResizing) return;
+  const dx = e.clientX - videoModalResizeStartX;
+  const newW = Math.min(520, Math.max(160, videoModalResizeStartW + dx));
+  videoModalBg.style.width = newW + 'px';
+});
+function stopVideoModalResize(e){
+  videoModalResizing = false;
+  try{ videoModalResizeHandle.releasePointerCapture(e.pointerId); }catch(_){}
+}
+videoModalResizeHandle.addEventListener('pointerup', stopVideoModalResize);
+videoModalResizeHandle.addEventListener('pointercancel', stopVideoModalResize);
 
 async function openVideoModal(card, el){
   videoModalTarget = { card, el };
