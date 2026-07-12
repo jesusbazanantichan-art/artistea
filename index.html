@@ -98,6 +98,18 @@
   .btn.danger:hover{background:#fdf0ef; border-color:var(--danger);}
   #spacer{flex:1;}
   #status{font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--ink-faint); white-space:nowrap;}
+  #save-indicator{
+    display:flex; align-items:center; gap:5px; font-family:'Inter',sans-serif;
+    font-size:11px; color:var(--ink-faint); white-space:nowrap; user-select:none;
+  }
+  .save-dot{
+    width:6px; height:6px; border-radius:50%; background:#8bc98f; flex:none;
+    transition:background .3s ease;
+  }
+  #save-indicator.saving .save-dot{ background:#e0b84a; animation:save-pulse 1s ease-in-out infinite; }
+  #save-indicator.local .save-dot{ background:#e0a34a; }
+  #save-indicator.error .save-dot{ background:var(--danger); }
+  @keyframes save-pulse{ 0%,100%{opacity:1;} 50%{opacity:0.35;} }
 
   /* ===================================================================
      TOOLBAR — reglas base compartidas (posición se define por dispositivo)
@@ -809,6 +821,10 @@
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
   </button>
   <div id="spacer"></div>
+  <div id="save-indicator" title="Estado del guardado">
+    <span class="save-dot"></span>
+    <span id="save-indicator-text">Guardado</span>
+  </div>
   <span id="status"></span>
   <button class="btn" id="auth-btn" style="display:none;">Iniciar sesión</button>
 </div>
@@ -1214,6 +1230,19 @@ function setStatus(msg){
   if(msg) setTimeout(()=>{ if(statusEl.textContent===msg) statusEl.textContent=''; }, duration);
 }
 
+const saveIndicatorEl = document.getElementById('save-indicator');
+const saveIndicatorText = document.getElementById('save-indicator-text');
+function setSaveIndicator(state){
+  saveIndicatorEl.className = state === 'saved' ? '' : state;
+  const labels = {
+    saving: 'Guardando...',
+    saved: 'Guardado',
+    local: 'Guardado en el dispositivo',
+    error: 'No se pudo guardar'
+  };
+  saveIndicatorText.textContent = labels[state] || 'Guardado';
+}
+
 function escapeHtml(str){
   return (str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
@@ -1375,6 +1404,7 @@ function scheduleSaveCards(noSnapshot){
   if(SHARE_MODE) return; // vista de solo lectura: nunca se guarda nada
   if(!noSnapshot) snapshotUndo();
   toggleEmptyHint();
+  setSaveIndicator('saving');
   clearTimeout(saveTimer);
   saveTimer = setTimeout(async ()=>{
     try{
@@ -1382,7 +1412,7 @@ function scheduleSaveCards(noSnapshot){
       await window.storage.set('cards:'+currentId, payload, false);
       // siempre guardar también en localStorage como respaldo local
       try{ localStorage.setItem('artistea:cards:'+currentId, payload); }catch(_){}
-      setStatus('Guardado ✓');
+      setSaveIndicator('saved');
       // si el proyecto actual tiene un link público activo, mantenerlo sincronizado
       syncPublicShareIfActive();
     }catch(e){
@@ -1390,8 +1420,9 @@ function scheduleSaveCards(noSnapshot){
       // si Supabase falla, guardar en localStorage de todas formas
       try{
         localStorage.setItem('artistea:cards:'+currentId, JSON.stringify(cards));
-        setStatus('Guardado localmente (sin conexión a la nube)');
+        setSaveIndicator('local');
       }catch(e2){
+        setSaveIndicator('error');
         setStatus('Error al guardar — ' + (e.message || e2.message || 'archivo muy pesado'));
       }
     }
@@ -4297,6 +4328,10 @@ document.getElementById('reset-password-submit').addEventListener('click', async
     btn.disabled = false; btn.textContent = 'Guardar contraseña';
   }
 });
+
+// avisar en el indicador apenas se pierde/recupera la conexión a internet
+window.addEventListener('offline', ()=>{ if(!SHARE_MODE) setSaveIndicator('local'); });
+window.addEventListener('online', ()=>{ if(!SHARE_MODE) setSaveIndicator('saved'); });
 
 async function boot(){
   if(SHARE_MODE){ await bootShareView(); return; }
