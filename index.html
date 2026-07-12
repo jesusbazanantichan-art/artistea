@@ -209,18 +209,25 @@
   /* ===================================================================
      CAJA DEL MEDIO ("quick-add") — misma idea, distinto ancla por dispositivo
      =================================================================== */
-  #quick-add{
+  #quick-add, #quick-add-placeholder{
     position:fixed; top:50%; transform:translate(-50%,-50%);
     z-index:30; min-width:220px; max-width:340px; min-height:48px;
+    padding:13px 16px; font-family:'Inter',sans-serif; font-size:15px;
+    text-align:center; line-height:1.5; box-sizing:border-box;
+  }
+  #quick-add{
     background:rgba(255,255,255,0.85); border:1.5px dashed var(--border-strong); border-radius:12px;
-    padding:13px 16px; font-family:'Inter',sans-serif; font-size:15px; color:var(--ink);
-    text-align:center; line-height:1.5; outline:none; cursor:text;
+    color:var(--ink); outline:none; cursor:text;
     box-shadow:0 2px 10px rgba(0,0,0,0.05);
   }
-  body.device-desktop #quick-add{ left:calc(50% + 90px); }
-  body.device-mobile  #quick-add{ left:50%; max-width:80vw; }
-  #quick-add:empty::before{ content:attr(data-placeholder); color:var(--ink-faint); transition:opacity .25s ease; }
-  #quick-add.flicker:empty::before{ opacity:0.15; }
+  #quick-add-placeholder{
+    color:var(--ink-faint); pointer-events:none; z-index:31;
+    transition:opacity .25s ease;
+  }
+  #quick-add-placeholder.hidden{ display:none; }
+  body.device-desktop #quick-add, body.device-desktop #quick-add-placeholder{ left:calc(50% + 90px); }
+  body.device-mobile  #quick-add, body.device-mobile  #quick-add-placeholder{ left:50%; max-width:80vw; }
+  #quick-add.flicker + #quick-add-placeholder{ opacity:0.15; }
   #quick-add:focus{ border-color:var(--ink-soft); border-style:solid; }
 
   #empty-hint{
@@ -864,7 +871,8 @@
 <div id="canvas-scroll">
   <div id="canvas">
     <div id="selection-rect"></div>
-    <div id="quick-add" contenteditable="true" data-placeholder="Escribí o pegá algo"></div>
+    <div id="quick-add" contenteditable="true"></div>
+    <span id="quick-add-placeholder">Escribí o pegá algo</span>
   </div>
 </div>
 
@@ -1175,6 +1183,7 @@ window.storage = {
 };
 const canvas = document.getElementById('canvas');
 const quickAdd = document.getElementById('quick-add');
+const quickAddPlaceholder = document.getElementById('quick-add-placeholder');
 const statusEl = document.getElementById('status');
 const projDropdownList = document.getElementById('proj-dropdown-list');
 
@@ -1461,7 +1470,14 @@ async function undoLastAction(){
 }
 
 function toggleEmptyHint(){
-  quickAdd.style.display = cards.length ? 'none' : 'block';
+  const show = cards.length ? 'none' : 'block';
+  quickAdd.style.display = show;
+  quickAddPlaceholder.style.display = show;
+  syncQuickAddPlaceholder();
+}
+
+function syncQuickAddPlaceholder(){
+  quickAddPlaceholder.classList.toggle('hidden', quickAdd.innerText.trim().length > 0);
 }
 
 function youtubeEmbed(url, startSec, endSec){
@@ -4633,6 +4649,7 @@ async function pasteUrlAsCard(rawText, extraTitle){
 function clearQuickAdd(){
   quickAdd.innerHTML = '';
   quickAdd.focus();
+  syncQuickAddPlaceholder();
   // reubicamos el cursor explícitamente en la caja vacía: si no, el navegador
   // a veces pierde las primeras letras que se escriben justo después de limpiarla
   try{
@@ -4644,6 +4661,8 @@ function clearQuickAdd(){
     sel.addRange(range);
   }catch(e){ /* navegadores raros: si falla, igual queda enfocado */ }
 }
+
+quickAdd.addEventListener('input', syncQuickAddPlaceholder);
 
 const motivationalPhrases = [
   'Escribí o pegá algo',
@@ -4662,7 +4681,7 @@ function cycleQuickAddPlaceholder(){
   quickAdd.classList.add('flicker');
   setTimeout(()=>{
     phraseIndex = (phraseIndex + 1) % motivationalPhrases.length;
-    quickAdd.setAttribute('data-placeholder', motivationalPhrases[phraseIndex]);
+    quickAddPlaceholder.textContent = motivationalPhrases[phraseIndex];
   }, 260);
   setTimeout(()=> quickAdd.classList.remove('flicker'), 520);
 }
