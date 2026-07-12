@@ -94,6 +94,7 @@
     display:flex; align-items:center; font-family:'Inter',sans-serif; font-weight:500;
     background:transparent; border:none; cursor:pointer;
     color:var(--ink-soft); transition:background .12s, color .12s; white-space:nowrap;
+    touch-action:manipulation;
   }
   .tool-btn:hover{background:#f2f2f2; color:var(--ink);}
   .tool-icon{
@@ -1187,7 +1188,10 @@ function renderProjectSelect(){
   if(cur) document.getElementById('proj-name-display').textContent = cur.name;
 }
 
+let loadCardsGeneration = 0; // usado para descartar cargas viejas que "llegan tarde"
+
 async function loadCards(){
+  const myGeneration = ++loadCardsGeneration;
   canvas.querySelectorAll('.card').forEach(c=>c.remove());
   undoHistory = [];
   updateUndoBtn();
@@ -1204,6 +1208,11 @@ async function loadCards(){
       if(cards.length) setStatus('Cargado desde caché local');
     }catch(_){ cards = []; }
   }
+  // si mientras esperábamos la respuesta se pidió cargar de nuevo (por ejemplo,
+  // el usuario cambió de proyecto rapidito, o loadCards se disparó dos veces),
+  // esta llamada quedó vieja: no dibujamos nada para no duplicar tarjetas
+  if(myGeneration !== loadCardsGeneration) return;
+
   cards.forEach(renderCard);
   // sincronizar el contador de z con el máximo guardado
   const maxZ = cards.reduce((m,c)=> Math.max(m, c.z||0), 0);
@@ -3054,6 +3063,9 @@ function wireVideoRecordButton(card, el){
 }
 
 
+let lastCardCreation = { type: null, time: 0 };
+const CARD_CREATE_DEBOUNCE_MS = 900; // cubre el margen del "clic fantasma" típico en mobile
+
 function addCard(type){
   const scrollEl = document.getElementById('canvas-scroll');
   const visibleW = scrollEl.clientWidth / zoomLevel;
@@ -3066,6 +3078,15 @@ function addCard(type){
 }
 
 function addCardAt(type, x, y){
+  // protección contra doble-creación: si por cualquier motivo (touch + click
+  // duplicados, arrastre en mobile, etc.) esta función se llama dos veces
+  // seguidas para el mismo tipo, la segunda se ignora
+  const now = Date.now();
+  if(lastCardCreation.type === type && (now - lastCardCreation.time) < CARD_CREATE_DEBOUNCE_MS){
+    return;
+  }
+  lastCardCreation = { type, time: now };
+
   const card = { id: uid(), type, x: Math.max(0,x), y: Math.max(0,y), w: 240, text:'', url:'', title:'' };
   if(type === 'note' || type === 'lyric'){
     card.w = 380;
@@ -3235,21 +3256,29 @@ select.addEventListener('change', async ()=>{
 document.getElementById('modal-cancel').addEventListener('click', closeModal);
 modalBg.addEventListener('click', (e)=>{ if(e.target===modalBg) closeModal(); });
 
+let creatingProject = false; // evita crear el mismo proyecto dos veces si el botón se dispara doble
+
 document.getElementById('modal-ok').addEventListener('click', async ()=>{
   const name = modalInput.value.trim();
   if(!name) return;
-  if(modalMode === 'new'){
-    const p = { id: uid(), name };
-    projects.push(p);
-    await saveProjects();
-    renderProjectSelect();
-    select.value = p.id; currentId = p.id;
-    await loadCards();
-  } else {
-    const p = projects.find(p=>p.id===currentId);
-    if(p){ p.name = name; await saveProjects(); renderProjectSelect(); select.value = currentId; }
+  if(creatingProject) return; // ya se está procesando un envío, ignorar el segundo disparo
+  creatingProject = true;
+  try{
+    if(modalMode === 'new'){
+      const p = { id: uid(), name };
+      projects.push(p);
+      await saveProjects();
+      renderProjectSelect();
+      select.value = p.id; currentId = p.id;
+      await loadCards();
+    } else {
+      const p = projects.find(p=>p.id===currentId);
+      if(p){ p.name = name; await saveProjects(); renderProjectSelect(); select.value = currentId; }
+    }
+    closeModal();
+  } finally {
+    creatingProject = false;
   }
-  closeModal();
 });
 modalInput.addEventListener('keydown', (e)=>{ if(e.key==='Enter') document.getElementById('modal-ok').click(); });
 
