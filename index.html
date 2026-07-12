@@ -1470,14 +1470,14 @@ async function undoLastAction(){
 }
 
 function toggleEmptyHint(){
-  const show = cards.length ? 'none' : 'block';
-  quickAdd.style.display = show;
-  quickAddPlaceholder.style.display = show;
+  quickAdd.style.display = cards.length ? 'none' : 'block';
   syncQuickAddPlaceholder();
 }
 
 function syncQuickAddPlaceholder(){
-  quickAddPlaceholder.classList.toggle('hidden', quickAdd.innerText.trim().length > 0);
+  const hasCards = cards.length > 0;
+  const hasText = quickAdd.innerText.trim().length > 0;
+  quickAddPlaceholder.classList.toggle('hidden', hasCards || hasText);
 }
 
 function youtubeEmbed(url, startSec, endSec){
@@ -4663,6 +4663,7 @@ function clearQuickAdd(){
 }
 
 quickAdd.addEventListener('input', syncQuickAddPlaceholder);
+quickAdd.addEventListener('keyup', syncQuickAddPlaceholder);
 
 const motivationalPhrases = [
   'Escribí o pegá algo',
