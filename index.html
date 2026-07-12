@@ -3303,11 +3303,11 @@ function getCanvasPos(clientX, clientY){
 }
 
 canvas.addEventListener('pointerdown', (e)=>{
-  // solo en el fondo (no en tarjetas ni botones): alcanza con que el clic
-  // no haya caído sobre ninguna tarjeta, en vez de exigir un elemento exacto
+  // solo en el fondo (no en tarjetas, botones, ni la caja del medio): alcanza
+  // con que el clic no haya caído sobre ninguna tarjeta ni sobre quick-add
   const onCard = e.target.closest && e.target.closest('.card');
   if(onCard) return;
-  if(e.target.id !== 'canvas' && e.target !== canvas && e.target.id !== 'empty-hint' && e.target.id !== 'quick-add') return;
+  if(e.target.id !== 'canvas' && e.target !== canvas && e.target.id !== 'empty-hint') return;
   if(spaceHeld) return;
   // sacar el foco de cualquier texto que se esté editando
   if(document.activeElement && (document.activeElement.isContentEditable || document.activeElement.tagName === 'INPUT')){
