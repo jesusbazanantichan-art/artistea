@@ -3267,9 +3267,10 @@ document.getElementById('modal-ok').addEventListener('click', async ()=>{
     if(modalMode === 'new'){
       const p = { id: uid(), name };
       projects.push(p);
+      currentId = p.id; // primero actualizamos a qué proyecto estamos parados...
       await saveProjects();
-      renderProjectSelect();
-      select.value = p.id; currentId = p.id;
+      select.value = p.id;
+      renderProjectSelect(); // ...y recién ahora mostramos el nombre correcto
       await loadCards();
     } else {
       const p = projects.find(p=>p.id===currentId);
@@ -3284,6 +3285,18 @@ modalInput.addEventListener('keydown', (e)=>{ if(e.key==='Enter') document.getEl
 
 document.getElementById('undo-btn').addEventListener('click', undoLastAction);
 document.addEventListener('keydown', (e)=>{
+  // evitar que las flechas del teclado scrolleen/muevan el tablero — así no
+  // interfieren con el avance/retroceso del reproductor de YouTube quando
+  // uno está viendo un video (el iframe maneja sus propias flechas solo)
+  if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)){
+    const active = document.activeElement;
+    const isTyping = active && (active.isContentEditable || active.tagName === 'INPUT' || active.tagName === 'TEXTAREA');
+    const isIframeFocused = active && active.tagName === 'IFRAME';
+    if(!isTyping && !isIframeFocused){
+      e.preventDefault();
+    }
+    return;
+  }
   if((e.ctrlKey||e.metaKey) && e.key === 'z'){
     const active = document.activeElement;
     const isTyping = active && (active.isContentEditable || active.tagName === 'INPUT');
