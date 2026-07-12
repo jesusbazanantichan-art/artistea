@@ -10,6 +10,8 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Artistea">
 <link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=2">
+<link rel="icon" type="image/png" sizes="512x512" href="icon-512.png?v=2">
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -50,11 +52,26 @@
     font-family:'Inter',sans-serif; font-size:13px; color:var(--ink);
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:140px;
   }
-  #proj-dropdown-arrow{ color:var(--ink-soft); flex:none; }
-  #project-select{
-    position:absolute; inset:0; opacity:0; cursor:pointer;
-    font-size:13px; border:none; background:transparent; width:100%;
+  #proj-dropdown-list{
+    position:absolute; top:calc(100% + 6px); left:0; min-width:240px; max-width:320px;
+    max-height:360px; overflow-y:auto; background:#fff; border:1px solid var(--border);
+    border-radius:10px; box-shadow:0 10px 30px rgba(0,0,0,0.14); z-index:70;
+    display:none; padding:6px; cursor:default;
   }
+  #proj-dropdown-list.show{ display:block; }
+  .proj-dd-item{
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    padding:8px 10px; border-radius:7px; cursor:pointer; font-family:'Inter',sans-serif;
+  }
+  .proj-dd-item:hover{ background:#f2f2f2; }
+  .proj-dd-item.current{ background:#eef1ff; }
+  .proj-dd-name{
+    font-size:13px; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .proj-dd-time{
+    font-size:11px; color:var(--ink-faint); flex:none; font-family:'JetBrains Mono',monospace;
+  }
+  #proj-dropdown-arrow{ color:var(--ink-soft); flex:none; }
 
   /* botones de acción con ícono */
   .icon-action-btn{
@@ -81,6 +98,18 @@
   .btn.danger:hover{background:#fdf0ef; border-color:var(--danger);}
   #spacer{flex:1;}
   #status{font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--ink-faint); white-space:nowrap;}
+  #save-indicator{
+    display:flex; align-items:center; gap:5px; font-family:'Inter',sans-serif;
+    font-size:11px; color:var(--ink-faint); white-space:nowrap; user-select:none;
+  }
+  .save-dot{
+    width:6px; height:6px; border-radius:50%; background:#8bc98f; flex:none;
+    transition:background .3s ease;
+  }
+  #save-indicator.saving .save-dot{ background:#e0b84a; animation:save-pulse 1s ease-in-out infinite; }
+  #save-indicator.local .save-dot{ background:#e0a34a; }
+  #save-indicator.error .save-dot{ background:var(--danger); }
+  @keyframes save-pulse{ 0%,100%{opacity:1;} 50%{opacity:0.35;} }
 
   /* ===================================================================
      TOOLBAR — reglas base compartidas (posición se define por dispositivo)
@@ -180,18 +209,25 @@
   /* ===================================================================
      CAJA DEL MEDIO ("quick-add") — misma idea, distinto ancla por dispositivo
      =================================================================== */
-  #quick-add{
+  #quick-add, #quick-add-placeholder{
     position:fixed; top:50%; transform:translate(-50%,-50%);
     z-index:30; min-width:220px; max-width:340px; min-height:48px;
+    padding:13px 16px; font-family:'Inter',sans-serif; font-size:15px;
+    text-align:center; line-height:1.5; box-sizing:border-box;
+  }
+  #quick-add{
     background:rgba(255,255,255,0.85); border:1.5px dashed var(--border-strong); border-radius:12px;
-    padding:13px 16px; font-family:'Inter',sans-serif; font-size:15px; color:var(--ink);
-    text-align:center; line-height:1.5; outline:none; cursor:text;
+    color:var(--ink); outline:none; cursor:text;
     box-shadow:0 2px 10px rgba(0,0,0,0.05);
   }
-  body.device-desktop #quick-add{ left:calc(50% + 90px); }
-  body.device-mobile  #quick-add{ left:50%; max-width:80vw; }
-  #quick-add:empty::before{ content:attr(data-placeholder); color:var(--ink-faint); transition:opacity .25s ease; }
-  #quick-add.flicker:empty::before{ opacity:0.15; }
+  #quick-add-placeholder{
+    color:var(--ink-faint); pointer-events:none; z-index:31;
+    transition:opacity .25s ease;
+  }
+  #quick-add-placeholder.hidden{ display:none; }
+  body.device-desktop #quick-add, body.device-desktop #quick-add-placeholder{ left:calc(50% + 90px); }
+  body.device-mobile  #quick-add, body.device-mobile  #quick-add-placeholder{ left:50%; max-width:80vw; }
+  #quick-add.flicker + #quick-add-placeholder{ opacity:0.15; }
   #quick-add:focus{ border-color:var(--ink-soft); border-style:solid; }
 
   #empty-hint{
@@ -653,6 +689,40 @@
   #camera-status{ font-family:'JetBrains Mono',monospace; font-size:11px; color:rgba(255,255,255,0.5); }
   .modal-box{ background:#fff; border:1px solid var(--border); border-radius:12px; padding:22px; width:300px; box-shadow:0 12px 36px rgba(0,0,0,0.18); }
 
+  /* modal del buscador global */
+  #search-modal-bg{
+    position:fixed; inset:0; background:rgba(20,20,20,0.4); z-index:150;
+    display:none; align-items:flex-start; justify-content:center; padding-top:10vh;
+  }
+  #search-modal-bg.show{ display:flex; }
+  #search-modal-box{ max-height:75vh; display:flex; flex-direction:column; }
+  #search-input{
+    width:100%; font-family:'Inter',sans-serif; font-size:15px; padding:10px 12px;
+    border:1px solid var(--border); border-radius:8px; margin-bottom:12px;
+  }
+  #search-input:focus{ outline:none; border-color:var(--ink); }
+  #search-results{ overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:4px; min-height:60px; }
+  .search-result-item{
+    display:flex; align-items:flex-start; gap:10px; padding:10px; border-radius:8px;
+    cursor:pointer; text-align:left; background:none; border:none; width:100%;
+    font-family:'Inter',sans-serif; border-bottom:1px solid var(--border);
+  }
+  .search-result-item:last-child{ border-bottom:none; }
+  .search-result-item:hover{ background:#f7f7f7; }
+  .search-result-icon{ font-size:17px; flex:none; margin-top:1px; width:20px; text-align:center; }
+  .search-result-text{ flex:1; min-width:0; }
+  .search-result-project{
+    font-size:11px; font-weight:600; color:var(--ink-soft); margin-bottom:3px;
+    text-transform:uppercase; letter-spacing:0.3px;
+  }
+  .search-result-snippet{
+    font-size:13px; color:var(--ink); line-height:1.5; overflow:hidden;
+    display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical;
+    white-space:pre-line;
+  }
+  .search-result-snippet mark{ background:#fff2a8; color:inherit; border-radius:2px; }
+  .search-empty-msg{ font-family:'Inter',sans-serif; font-size:13px; color:var(--ink-faint); padding:20px; text-align:center; }
+
   /* modal de compartir */
   #share-modal-bg{
     position:fixed; inset:0; background:rgba(20,20,20,0.4); z-index:150;
@@ -712,7 +782,9 @@
   body.share-view #auth-btn,
   body.share-view #quick-add,
   body.share-view #proj-dropdown-arrow,
-  body.share-view #project-select,
+  body.share-view #proj-dropdown-list,
+  body.share-view #proj-rename-btn,
+  body.share-view #search-btn,
   body.share-view .card-del,
   body.share-view .add-more-btn,
   body.share-view .icon-btn-row,
@@ -734,8 +806,14 @@
   <div id="proj-name-wrap">
     <span id="proj-name-display"></span>
     <svg id="proj-dropdown-arrow" width="10" height="10" viewBox="0 0 10 10"><path d="M2 3.5l3 3 3-3" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
-    <select id="project-select" title="Cambiar proyecto"></select>
+    <div id="proj-dropdown-list"></div>
   </div>
+  <button class="icon-action-btn" id="proj-rename-btn" title="Renombrar proyecto">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+  </button>
+  <button class="icon-action-btn" id="search-btn" title="Buscar en todos tus proyectos">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+  </button>
   <button class="icon-action-btn" id="undo-btn" title="Deshacer (Ctrl+Z)">
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M3 13C5 7 10 4 16 6a9 9 0 0 1 5 8"/></svg>
   </button>
@@ -750,6 +828,10 @@
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
   </button>
   <div id="spacer"></div>
+  <div id="save-indicator" title="Estado del guardado">
+    <span class="save-dot"></span>
+    <span id="save-indicator-text">Guardado</span>
+  </div>
   <span id="status"></span>
   <button class="btn" id="auth-btn" style="display:none;">Iniciar sesión</button>
 </div>
@@ -789,7 +871,8 @@
 <div id="canvas-scroll">
   <div id="canvas">
     <div id="selection-rect"></div>
-    <div id="quick-add" contenteditable="true" data-placeholder="Escribí o pegá algo"></div>
+    <div id="quick-add" contenteditable="true"></div>
+    <span id="quick-add-placeholder">Escribí o pegá algo</span>
   </div>
 </div>
 
@@ -873,6 +956,17 @@
     <div id="reset-password-error" style="font-size:12px;color:var(--danger);margin:-8px 0 8px;display:none;"></div>
     <div class="modal-actions" style="flex-direction:column;gap:8px;">
       <button class="btn primary" id="reset-password-submit" style="width:100%;">Guardar contraseña</button>
+    </div>
+  </div>
+</div>
+
+<div id="search-modal-bg">
+  <div class="modal-box" id="search-modal-box" style="width:440px; max-width:90vw;">
+    <h3>Buscar en tus proyectos</h3>
+    <input id="search-input" type="text" placeholder="Escribí una palabra o frase..." autocomplete="off">
+    <div id="search-results"></div>
+    <div class="modal-actions">
+      <button class="btn" id="search-modal-close">Cerrar</button>
     </div>
   </div>
 </div>
@@ -1089,8 +1183,9 @@ window.storage = {
 };
 const canvas = document.getElementById('canvas');
 const quickAdd = document.getElementById('quick-add');
+const quickAddPlaceholder = document.getElementById('quick-add-placeholder');
 const statusEl = document.getElementById('status');
-const select = document.getElementById('project-select');
+const projDropdownList = document.getElementById('proj-dropdown-list');
 
 let projects = [];
 let currentId = null;
@@ -1128,6 +1223,10 @@ function selectCard(id){
   }
 }
 function deselectAll(){
+  // si el foco quedó en un video de YouTube, sacarlo también
+  if(document.activeElement && document.activeElement.tagName === 'IFRAME'){
+    document.activeElement.blur();
+  }
   selectCard(null);
 }
 const ZOOM_MIN = 0.1, ZOOM_MAX = 2.5, ZOOM_STEP = 0.15;
@@ -1140,8 +1239,37 @@ function setStatus(msg){
   if(msg) setTimeout(()=>{ if(statusEl.textContent===msg) statusEl.textContent=''; }, duration);
 }
 
+const saveIndicatorEl = document.getElementById('save-indicator');
+const saveIndicatorText = document.getElementById('save-indicator-text');
+function setSaveIndicator(state){
+  saveIndicatorEl.className = state === 'saved' ? '' : state;
+  const labels = {
+    saving: 'Guardando...',
+    saved: 'Guardado',
+    local: 'Guardado en el dispositivo',
+    error: 'No se pudo guardar'
+  };
+  saveIndicatorText.textContent = labels[state] || 'Guardado';
+}
+
 function escapeHtml(str){
   return (str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+let allProjectsCardsCache = {}; // project_id -> { cards:[...], updatedAt: string }
+
+async function fetchAllProjectsCards(){
+  if(guestMode || !currentUser){ allProjectsCardsCache = {}; return; }
+  try{
+    const r = await sbFetch(`/rest/v1/cards?user_id=eq.${currentUser.id}&select=project_id,data,updated_at`);
+    const rows = await r.json();
+    if(!Array.isArray(rows)) return;
+    const map = {};
+    rows.forEach(row=>{
+      map[row.project_id] = { cards: row.data || [], updatedAt: row.updated_at };
+    });
+    allProjectsCardsCache = map;
+  }catch(e){ /* si falla, el buscador y el orden por fecha simplemente no tienen datos extra */ }
 }
 
 async function loadProjects(){
@@ -1160,9 +1288,15 @@ async function loadProjects(){
     projects = [p];
     await saveProjects();
   }
-  renderProjectSelect();
+  await fetchAllProjectsCards();
+  // ordenar por el proyecto tocado más recientemente primero
+  projects.sort((a,b)=>{
+    const ta = allProjectsCardsCache[a.id]?.updatedAt || '';
+    const tb = allProjectsCardsCache[b.id]?.updatedAt || '';
+    return tb.localeCompare(ta);
+  });
   currentId = projects[0].id;
-  select.value = currentId;
+  renderProjectSelect();
   await loadCards();
 }
 
@@ -1176,19 +1310,53 @@ async function saveProjects(){
   }
 }
 
+function formatRelativeTime(isoString){
+  if(!isoString || isoString === 'now') return 'recién';
+  const then = new Date(isoString).getTime();
+  if(isNaN(then)) return '';
+  const diffSec = Math.max(0, Math.floor((Date.now() - then) / 1000));
+  if(diffSec < 60) return 'hace instantes';
+  const diffMin = Math.floor(diffSec / 60);
+  if(diffMin < 60) return `hace ${diffMin} min`;
+  const diffH = Math.floor(diffMin / 60);
+  if(diffH < 24) return `hace ${diffH} h`;
+  const diffD = Math.floor(diffH / 24);
+  if(diffD < 7) return `hace ${diffD} día${diffD>1?'s':''}`;
+  const diffW = Math.floor(diffD / 7);
+  if(diffW < 5) return `hace ${diffW} semana${diffW>1?'s':''}`;
+  const diffM = Math.floor(diffD / 30);
+  if(diffM < 12) return `hace ${diffM} mes${diffM>1?'es':''}`;
+  const diffY = Math.floor(diffD / 365);
+  return `hace ${diffY} año${diffY>1?'s':''}`;
+}
+
 function renderProjectSelect(){
-  select.innerHTML = '';
+  // lista desplegable personalizada, ordenada por más reciente, con fecha
+  projDropdownList.innerHTML = '';
   projects.forEach(p=>{
-    const o = document.createElement('option');
-    o.value = p.id; o.textContent = p.name;
-    select.appendChild(o);
+    const row = document.createElement('div');
+    row.className = 'proj-dd-item' + (p.id===currentId ? ' current' : '');
+    const timeLabel = formatRelativeTime(allProjectsCardsCache[p.id]?.updatedAt);
+    row.innerHTML = `<span class="proj-dd-name">${escapeHtml(p.name)}</span><span class="proj-dd-time">${timeLabel}</span>`;
+    row.addEventListener('click', async (e)=>{
+      e.stopPropagation();
+      projDropdownList.classList.remove('show');
+      if(p.id === currentId) return;
+      currentId = p.id;
+      document.getElementById('proj-name-display').textContent = p.name;
+      await loadCards();
+    });
+    projDropdownList.appendChild(row);
   });
   // actualizar el display del nombre del proyecto actual
   const cur = projects.find(p=>p.id===currentId) || projects[0];
   if(cur) document.getElementById('proj-name-display').textContent = cur.name;
 }
 
+let loadCardsGeneration = 0; // usado para descartar cargas viejas que "llegan tarde"
+
 async function loadCards(){
+  const myGeneration = ++loadCardsGeneration;
   canvas.querySelectorAll('.card').forEach(c=>c.remove());
   undoHistory = [];
   updateUndoBtn();
@@ -1205,6 +1373,11 @@ async function loadCards(){
       if(cards.length) setStatus('Cargado desde caché local');
     }catch(_){ cards = []; }
   }
+  // si mientras esperábamos la respuesta se pidió cargar de nuevo (por ejemplo,
+  // el usuario cambió de proyecto rapidito, o loadCards se disparó dos veces),
+  // esta llamada quedó vieja: no dibujamos nada para no duplicar tarjetas
+  if(myGeneration !== loadCardsGeneration) return;
+
   cards.forEach(renderCard);
   // sincronizar el contador de z con el máximo guardado
   const maxZ = cards.reduce((m,c)=> Math.max(m, c.z||0), 0);
@@ -1240,6 +1413,7 @@ function scheduleSaveCards(noSnapshot){
   if(SHARE_MODE) return; // vista de solo lectura: nunca se guarda nada
   if(!noSnapshot) snapshotUndo();
   toggleEmptyHint();
+  setSaveIndicator('saving');
   clearTimeout(saveTimer);
   saveTimer = setTimeout(async ()=>{
     try{
@@ -1247,7 +1421,7 @@ function scheduleSaveCards(noSnapshot){
       await window.storage.set('cards:'+currentId, payload, false);
       // siempre guardar también en localStorage como respaldo local
       try{ localStorage.setItem('artistea:cards:'+currentId, payload); }catch(_){}
-      setStatus('Guardado ✓');
+      setSaveIndicator('saved');
       // si el proyecto actual tiene un link público activo, mantenerlo sincronizado
       syncPublicShareIfActive();
     }catch(e){
@@ -1255,8 +1429,9 @@ function scheduleSaveCards(noSnapshot){
       // si Supabase falla, guardar en localStorage de todas formas
       try{
         localStorage.setItem('artistea:cards:'+currentId, JSON.stringify(cards));
-        setStatus('Guardado localmente (sin conexión a la nube)');
+        setSaveIndicator('local');
       }catch(e2){
+        setSaveIndicator('error');
         setStatus('Error al guardar — ' + (e.message || e2.message || 'archivo muy pesado'));
       }
     }
@@ -1295,7 +1470,14 @@ async function undoLastAction(){
 }
 
 function toggleEmptyHint(){
-  quickAdd.style.display = cards.length ? 'none' : 'block';
+  const show = cards.length ? 'none' : 'block';
+  quickAdd.style.display = show;
+  quickAddPlaceholder.style.display = show;
+  syncQuickAddPlaceholder();
+}
+
+function syncQuickAddPlaceholder(){
+  quickAddPlaceholder.classList.toggle('hidden', quickAdd.innerText.trim().length > 0);
 }
 
 function youtubeEmbed(url, startSec, endSec){
@@ -3137,8 +3319,11 @@ function getCanvasPos(clientX, clientY){
 }
 
 canvas.addEventListener('pointerdown', (e)=>{
-  // solo en el fondo (no en tarjetas ni botones)
-  if(e.target !== canvas && e.target.id !== 'empty-hint') return;
+  // solo en el fondo (no en tarjetas, botones, ni la caja del medio): alcanza
+  // con que el clic no haya caído sobre ninguna tarjeta ni sobre quick-add
+  const onCard = e.target.closest && e.target.closest('.card');
+  if(onCard) return;
+  if(e.target.id !== 'canvas' && e.target !== canvas && e.target.id !== 'empty-hint') return;
   if(spaceHeld) return;
   // sacar el foco de cualquier texto que se esté editando
   if(document.activeElement && (document.activeElement.isContentEditable || document.activeElement.tagName === 'INPUT')){
@@ -3195,7 +3380,8 @@ canvas.addEventListener('pointercancel', ()=>{
 
 // clic en el fondo del canvas deselecciona
 canvas.addEventListener('pointerdown', (e)=>{
-  if(e.target === canvas || e.target.id === 'empty-hint' || e.target.id === 'quick-add') deselectAll();
+  const onCard2 = e.target.closest && e.target.closest('.card');
+  if(!onCard2 && (e.target === canvas || e.target.id === 'empty-hint' || e.target.id === 'quick-add')) deselectAll();
 });
 
 canvas.addEventListener('dragover', (e)=>{
@@ -3214,8 +3400,6 @@ canvas.addEventListener('drop', (e)=>{
   addCardAt(type, x, y);
 });
 
-select.addEventListener('change', async ()=>{ currentId = select.value; await loadCards(); });
-
 /* ---------- project modal ---------- */
 const modalBg = document.getElementById('modal-bg');
 const modalInput = document.getElementById('modal-input');
@@ -3232,42 +3416,65 @@ function openModal(mode){
 function closeModal(){ modalBg.classList.remove('show'); }
 
 document.getElementById('new-proj').addEventListener('click', ()=>openModal('new'));
-// click en el nombre del proyecto = renombrar
+
+// click en el nombre del proyecto = abrir/cerrar la lista para cambiar de proyecto
 document.getElementById('proj-name-wrap').addEventListener('click', (e)=>{
-  // solo si el click NO fue en el select (cambio de proyecto)
-  if(e.target === select) return;
+  e.stopPropagation();
+  projDropdownList.classList.toggle('show');
+});
+// click afuera cierra la lista
+document.addEventListener('click', (e)=>{
+  if(!e.target.closest('#proj-name-wrap')) projDropdownList.classList.remove('show');
+});
+// botón aparte para renombrar el proyecto actual
+document.getElementById('proj-rename-btn').addEventListener('click', (e)=>{
   e.stopPropagation();
   openModal('rename');
 });
-// cuando cambia el proyecto en el select
-select.addEventListener('change', async ()=>{
-  currentId = select.value;
-  document.getElementById('proj-name-display').textContent = projects.find(p=>p.id===currentId)?.name || '';
-  await loadCards();
-});
+
 document.getElementById('modal-cancel').addEventListener('click', closeModal);
 modalBg.addEventListener('click', (e)=>{ if(e.target===modalBg) closeModal(); });
+
+let creatingProject = false; // evita crear el mismo proyecto dos veces si el botón se dispara doble
 
 document.getElementById('modal-ok').addEventListener('click', async ()=>{
   const name = modalInput.value.trim();
   if(!name) return;
-  if(modalMode === 'new'){
-    const p = { id: uid(), name };
-    projects.push(p);
-    await saveProjects();
-    renderProjectSelect();
-    select.value = p.id; currentId = p.id;
-    await loadCards();
-  } else {
-    const p = projects.find(p=>p.id===currentId);
-    if(p){ p.name = name; await saveProjects(); renderProjectSelect(); select.value = currentId; }
+  if(creatingProject) return; // ya se está procesando un envío, ignorar el segundo disparo
+  creatingProject = true;
+  try{
+    if(modalMode === 'new'){
+      const p = { id: uid(), name };
+      projects.push(p);
+      currentId = p.id; // primero actualizamos a qué proyecto estamos parados...
+      await saveProjects();
+      renderProjectSelect(); // ...y recién ahora mostramos el nombre correcto
+      await loadCards();
+    } else {
+      const p = projects.find(p=>p.id===currentId);
+      if(p){ p.name = name; await saveProjects(); renderProjectSelect(); }
+    }
+    closeModal();
+  } finally {
+    creatingProject = false;
   }
-  closeModal();
 });
 modalInput.addEventListener('keydown', (e)=>{ if(e.key==='Enter') document.getElementById('modal-ok').click(); });
 
 document.getElementById('undo-btn').addEventListener('click', undoLastAction);
 document.addEventListener('keydown', (e)=>{
+  // evitar que las flechas del teclado scrolleen/muevan el tablero — así no
+  // interfieren con el avance/retroceso del reproductor de YouTube quando
+  // uno está viendo un video (el iframe maneja sus propias flechas solo)
+  if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)){
+    const active = document.activeElement;
+    const isTyping = active && (active.isContentEditable || active.tagName === 'INPUT' || active.tagName === 'TEXTAREA');
+    const isIframeFocused = active && active.tagName === 'IFRAME';
+    if(!isTyping && !isIframeFocused){
+      e.preventDefault();
+    }
+    return;
+  }
   if((e.ctrlKey||e.metaKey) && e.key === 'z'){
     const active = document.activeElement;
     const isTyping = active && (active.isContentEditable || active.tagName === 'INPUT');
@@ -3322,8 +3529,8 @@ document.getElementById('delete-proj').addEventListener('click', async ()=>{
   try{ localStorage.removeItem('artistea:cards:'+currentId); }catch(e){}
   projects = projects.filter(p=>p.id!==currentId);
   await saveProjects();
+  currentId = projects[0].id;
   renderProjectSelect();
-  currentId = projects[0].id; select.value = currentId;
   document.getElementById('proj-name-display').textContent = projects[0].name;
   await loadCards();
 });
@@ -3486,6 +3693,135 @@ async function makeProjectPrivate(){
 }
 
 document.getElementById('share-proj-btn').addEventListener('click', openShareModal);
+
+/* ---------- buscador global (busca en todos los proyectos) ---------- */
+const searchModalBg = document.getElementById('search-modal-bg');
+const searchInput = document.getElementById('search-input');
+const searchResultsEl = document.getElementById('search-results');
+let searchDebounceTimer = null;
+
+function htmlToPlainTextSafe(html){
+  try{ return htmlToPlainText(html || ''); }catch(e){ return html || ''; }
+}
+
+function highlightMatch(text, query){
+  const idx = text.toLowerCase().indexOf(query.toLowerCase());
+  if(idx === -1) return escapeHtml(text.slice(0, 140));
+  const start = Math.max(0, idx - 40);
+  const end = Math.min(text.length, idx + query.length + 60);
+  const before = escapeHtml(text.slice(start, idx));
+  const match = escapeHtml(text.slice(idx, idx + query.length));
+  const after = escapeHtml(text.slice(idx + query.length, end));
+  return (start > 0 ? '…' : '') + before + '<mark>' + match + '</mark>' + after + (end < text.length ? '…' : '');
+}
+
+function runGlobalSearch(query){
+  searchResultsEl.innerHTML = '';
+  const q = query.trim();
+  if(!q){
+    searchResultsEl.innerHTML = '<div class="search-empty-msg">Escribí algo para buscar en todos tus proyectos.</div>';
+    return;
+  }
+  if(guestMode){
+    searchResultsEl.innerHTML = '<div class="search-empty-msg">El buscador global necesita una cuenta (no invitado).</div>';
+    return;
+  }
+  const qLower = q.toLowerCase();
+  const results = [];
+
+  // buscar también dentro del proyecto abierto ahora mismo, por si todavía
+  // no se guardó (autosave puede tardar unos segundos)
+  const liveMap = { ...allProjectsCardsCache, [currentId]: { cards, updatedAt: 'now' } };
+
+  projects.forEach(proj=>{
+    const entry = liveMap[proj.id];
+    if(!entry || !entry.cards) return;
+    entry.cards.forEach(card=>{
+      let text = '';
+      if(card.type === 'note' || card.type === 'lyric') text = htmlToPlainTextSafe(card.text);
+      else text = card.title || '';
+      if(!text) return;
+      if(text.toLowerCase().includes(qLower)){
+        results.push({ project: proj, card, text });
+      }
+    });
+    // también buscar por nombre de proyecto
+    if(proj.name && proj.name.toLowerCase().includes(qLower) && !entry.cards.some(c=>{
+      const t = (c.type==='note'||c.type==='lyric') ? htmlToPlainTextSafe(c.text) : (c.title||'');
+      return t.toLowerCase().includes(qLower);
+    })){
+      results.push({ project: proj, card: null, text: proj.name });
+    }
+  });
+
+  if(results.length === 0){
+    searchResultsEl.innerHTML = '<div class="search-empty-msg">No encontramos nada con esa palabra.</div>';
+    return;
+  }
+
+  results.slice(0, 40).forEach(res=>{
+    const icon = res.card
+      ? (res.card.type === 'image' ? '🖼️' : res.card.type === 'video' ? '🎥' : res.card.type === 'audio' ? '🎵' : res.card.type === 'link' ? '🔗' : '📝')
+      : '📁';
+    const btn = document.createElement('button');
+    btn.className = 'search-result-item';
+    btn.innerHTML = `
+      <span class="search-result-icon">${icon}</span>
+      <span class="search-result-text">
+        <div class="search-result-project">${escapeHtml(res.project.name)}</div>
+        <div class="search-result-snippet">${highlightMatch(res.text, q)}</div>
+      </span>`;
+    btn.addEventListener('click', ()=> jumpToSearchResult(res));
+    searchResultsEl.appendChild(btn);
+  });
+}
+
+async function jumpToSearchResult(res){
+  searchModalBg.classList.remove('show');
+  if(res.project.id !== currentId){
+    currentId = res.project.id;
+    renderProjectSelect();
+    document.getElementById('proj-name-display').textContent = res.project.name;
+    await loadCards();
+  }
+  if(res.card){
+    // esperar al siguiente frame para asegurarnos que la tarjeta ya está en el DOM
+    requestAnimationFrame(()=>{
+      const el = canvas.querySelector(`[data-id="${res.card.id}"]`);
+      if(el){
+        const scrollEl = document.getElementById('canvas-scroll');
+        const cw = res.card.w || 240, ch = res.card.h || 120;
+        scrollEl.scrollLeft = (res.card.x + cw/2) * zoomLevel - scrollEl.clientWidth/2;
+        scrollEl.scrollTop  = (res.card.y + ch/2) * zoomLevel - scrollEl.clientHeight/2;
+        selectCard(res.card.id);
+        el.classList.add('just-added');
+        setTimeout(()=> el.classList.remove('just-added'), 2200);
+      }
+    });
+  }
+}
+
+document.getElementById('search-btn').addEventListener('click', ()=>{
+  searchModalBg.classList.add('show');
+  searchInput.value = '';
+  searchInput.focus();
+  runGlobalSearch('');
+});
+document.getElementById('search-modal-close').addEventListener('click', ()=> searchModalBg.classList.remove('show'));
+searchModalBg.addEventListener('click', e=>{ if(e.target===searchModalBg) searchModalBg.classList.remove('show'); });
+searchInput.addEventListener('input', ()=>{
+  clearTimeout(searchDebounceTimer);
+  searchDebounceTimer = setTimeout(()=> runGlobalSearch(searchInput.value), 200);
+});
+document.addEventListener('keydown', e=>{
+  if((e.ctrlKey||e.metaKey) && e.key === 'k'){
+    e.preventDefault();
+    searchModalBg.classList.add('show');
+    searchInput.value = '';
+    searchInput.focus();
+    runGlobalSearch('');
+  }
+});
 document.getElementById('share-modal-close').addEventListener('click', ()=> shareModalBg.classList.remove('show'));
 shareModalBg.addEventListener('click', e=>{ if(e.target===shareModalBg) shareModalBg.classList.remove('show'); });
 
@@ -4009,6 +4345,10 @@ document.getElementById('reset-password-submit').addEventListener('click', async
   }
 });
 
+// avisar en el indicador apenas se pierde/recupera la conexión a internet
+window.addEventListener('offline', ()=>{ if(!SHARE_MODE) setSaveIndicator('local'); });
+window.addEventListener('online', ()=>{ if(!SHARE_MODE) setSaveIndicator('saved'); });
+
 async function boot(){
   if(SHARE_MODE){ await bootShareView(); return; }
   setZoom(1);
@@ -4309,6 +4649,7 @@ async function pasteUrlAsCard(rawText, extraTitle){
 function clearQuickAdd(){
   quickAdd.innerHTML = '';
   quickAdd.focus();
+  syncQuickAddPlaceholder();
   // reubicamos el cursor explícitamente en la caja vacía: si no, el navegador
   // a veces pierde las primeras letras que se escriben justo después de limpiarla
   try{
@@ -4320,6 +4661,8 @@ function clearQuickAdd(){
     sel.addRange(range);
   }catch(e){ /* navegadores raros: si falla, igual queda enfocado */ }
 }
+
+quickAdd.addEventListener('input', syncQuickAddPlaceholder);
 
 const motivationalPhrases = [
   'Escribí o pegá algo',
@@ -4338,7 +4681,7 @@ function cycleQuickAddPlaceholder(){
   quickAdd.classList.add('flicker');
   setTimeout(()=>{
     phraseIndex = (phraseIndex + 1) % motivationalPhrases.length;
-    quickAdd.setAttribute('data-placeholder', motivationalPhrases[phraseIndex]);
+    quickAddPlaceholder.textContent = motivationalPhrases[phraseIndex];
   }, 260);
   setTimeout(()=> quickAdd.classList.remove('flicker'), 520);
 }
@@ -4376,7 +4719,6 @@ function commitQuickAddText(){
     const newName = words.length > 30 ? words.slice(0,30)+'…' : words;
     curProj.name = newName;
     renderProjectSelect();
-    select.value = currentId;
     saveProjects();
   }
 }
