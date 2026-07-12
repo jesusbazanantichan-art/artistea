@@ -1128,6 +1128,10 @@ function selectCard(id){
   }
 }
 function deselectAll(){
+  // si el foco quedó en un video de YouTube, sacarlo también
+  if(document.activeElement && document.activeElement.tagName === 'IFRAME'){
+    document.activeElement.blur();
+  }
   selectCard(null);
 }
 const ZOOM_MIN = 0.1, ZOOM_MAX = 2.5, ZOOM_STEP = 0.15;
@@ -3145,8 +3149,11 @@ function getCanvasPos(clientX, clientY){
 }
 
 canvas.addEventListener('pointerdown', (e)=>{
-  // solo en el fondo (no en tarjetas ni botones)
-  if(e.target !== canvas && e.target.id !== 'empty-hint') return;
+  // solo en el fondo (no en tarjetas ni botones): alcanza con que el clic
+  // no haya caído sobre ninguna tarjeta, en vez de exigir un elemento exacto
+  const onCard = e.target.closest && e.target.closest('.card');
+  if(onCard) return;
+  if(e.target.id !== 'canvas' && e.target !== canvas && e.target.id !== 'empty-hint' && e.target.id !== 'quick-add') return;
   if(spaceHeld) return;
   // sacar el foco de cualquier texto que se esté editando
   if(document.activeElement && (document.activeElement.isContentEditable || document.activeElement.tagName === 'INPUT')){
@@ -3203,7 +3210,8 @@ canvas.addEventListener('pointercancel', ()=>{
 
 // clic en el fondo del canvas deselecciona
 canvas.addEventListener('pointerdown', (e)=>{
-  if(e.target === canvas || e.target.id === 'empty-hint' || e.target.id === 'quick-add') deselectAll();
+  const onCard2 = e.target.closest && e.target.closest('.card');
+  if(!onCard2 && (e.target === canvas || e.target.id === 'empty-hint' || e.target.id === 'quick-add')) deselectAll();
 });
 
 canvas.addEventListener('dragover', (e)=>{
