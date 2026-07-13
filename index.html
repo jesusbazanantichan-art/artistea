@@ -570,13 +570,15 @@
   #video-modal-bg #camera-modal{ overflow:hidden; border-radius:14px; }
   #video-modal-bg #camera-modal{
     position:relative; width:100%; display:flex; flex-direction:column;
-    cursor:grab; touch-action:none;
   }
-  #video-modal-bg #camera-modal:active{ cursor:grabbing; }
   #video-modal-bg #video-preview{
     width:100%; aspect-ratio:16/9; object-fit:cover; background:#111; display:block;
-    pointer-events:none; /* el arrastre se maneja desde camera-modal, no compite con el video */
   }
+  #video-drag-overlay{
+    position:absolute; top:0; left:0; right:0; aspect-ratio:16/9; z-index:4;
+    cursor:grab; touch-action:none;
+  }
+  #video-drag-overlay:active{ cursor:grabbing; }
   #video-mic-select{
     position:absolute; top:8px; right:8px; z-index:6; max-width:calc(100% - 16px);
     font-family:'Inter',sans-serif; font-size:11px; color:#fff; background:rgba(0,0,0,0.55);
@@ -946,6 +948,7 @@
 <div id="video-modal-bg">
   <div id="camera-modal">
     <video id="video-preview" autoplay playsinline muted></video>
+    <div id="video-drag-overlay" title="Arrastrá para mover"></div>
     <div id="video-modal-timer">00:00</div>
     <select id="video-mic-select" title="Elegir micrófono"></select>
     <div id="camera-controls">
@@ -3002,15 +3005,15 @@ const videoPreviewEl = document.getElementById('video-preview');
 const videoTimerEl = document.getElementById('video-modal-timer');
 const videoRecBtn = document.getElementById('video-rec-btn');
 
-// arrastrar libremente la ventanita de grabación (antes y durante grabar),
-// desde cualquier parte de la ventana (como se arrastran las notas), no
-// solo desde una agarradera angosta arriba
-const cameraModalEl = document.getElementById('camera-modal');
+// arrastrar libremente la ventanita de grabación (antes y durante grabar).
+// Usamos una capa transparente dedicada en vez de agarrar el clic desde el
+// propio video: en algunos celulares, mientras el video está GRABANDO, el
+// navegador no deja pasar bien los toques a través de él, y el arrastre
+// dejaba de funcionar justo en ese momento.
+const videoDragOverlay = document.getElementById('video-drag-overlay');
 let videoModalDragging = false, videoModalDragStartX = 0, videoModalDragStartY = 0;
 let videoModalOrigLeft = 0, videoModalOrigTop = 0;
-cameraModalEl.addEventListener('pointerdown', (e)=>{
-  // no arrastrar si el toque fue sobre un botón, el selector de mic, o la esquina de resize
-  if(e.target.closest('button, select, #video-modal-resize')) return;
+videoDragOverlay.addEventListener('pointerdown', (e)=>{
   videoModalDragging = true;
   const rect = videoModalBg.getBoundingClientRect();
   // pasar de anclaje right/bottom a left/top para poder moverla libremente
@@ -3022,10 +3025,10 @@ cameraModalEl.addEventListener('pointerdown', (e)=>{
   videoModalOrigTop = rect.top;
   videoModalDragStartX = e.clientX;
   videoModalDragStartY = e.clientY;
-  cameraModalEl.setPointerCapture(e.pointerId);
+  videoDragOverlay.setPointerCapture(e.pointerId);
   e.preventDefault();
 });
-cameraModalEl.addEventListener('pointermove', (e)=>{
+videoDragOverlay.addEventListener('pointermove', (e)=>{
   if(!videoModalDragging) return;
   const dx = e.clientX - videoModalDragStartX;
   const dy = e.clientY - videoModalDragStartY;
@@ -3036,10 +3039,10 @@ cameraModalEl.addEventListener('pointermove', (e)=>{
 });
 function stopVideoModalDrag(e){
   videoModalDragging = false;
-  try{ cameraModalEl.releasePointerCapture(e.pointerId); }catch(_){}
+  try{ videoDragOverlay.releasePointerCapture(e.pointerId); }catch(_){}
 }
-cameraModalEl.addEventListener('pointerup', stopVideoModalDrag);
-cameraModalEl.addEventListener('pointercancel', stopVideoModalDrag);
+videoDragOverlay.addEventListener('pointerup', stopVideoModalDrag);
+videoDragOverlay.addEventListener('pointercancel', stopVideoModalDrag);
 
 // cambiar el tamaño de la ventanita arrastrando su esquina — funciona
 // tanto antes de grabar como durante la grabación en curso
@@ -3125,6 +3128,7 @@ async function startVideoPreviewStream(micDeviceId){
       const settings = track.getSettings ? track.getSettings() : {};
       if(settings.width && settings.height){
         videoPreviewEl.style.aspectRatio = `${settings.width} / ${settings.height}`;
+        videoDragOverlay.style.aspectRatio = `${settings.width} / ${settings.height}`;
       }
     }
   }catch(err){
