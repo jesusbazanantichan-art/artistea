@@ -568,17 +568,19 @@
   }
   #video-modal-bg.show{ display:block; }
   #video-modal-bg #camera-modal{ overflow:hidden; border-radius:14px; }
-  #video-modal-drag{
-    height:20px; display:flex; align-items:center; justify-content:center;
-    background:#111; color:rgba(255,255,255,0.4); font-size:11px; letter-spacing:2px;
-    cursor:grab; user-select:none; touch-action:none;
-  }
-  #video-modal-drag:active{ cursor:grabbing; background:#1a1a1a; }
   #video-modal-bg #camera-modal{
     position:relative; width:100%; display:flex; flex-direction:column;
+    cursor:grab; touch-action:none;
   }
+  #video-modal-bg #camera-modal:active{ cursor:grabbing; }
   #video-modal-bg #video-preview{
     width:100%; aspect-ratio:16/9; object-fit:cover; background:#111; display:block;
+    pointer-events:none; /* el arrastre se maneja desde camera-modal, no compite con el video */
+  }
+  #video-mic-select{
+    position:absolute; top:8px; right:8px; z-index:6; max-width:calc(100% - 16px);
+    font-family:'Inter',sans-serif; font-size:11px; color:#fff; background:rgba(0,0,0,0.55);
+    border:1px solid rgba(255,255,255,0.25); border-radius:8px; padding:4px 6px; cursor:pointer;
   }
   #video-modal-resize{
     position:absolute; right:0; bottom:0; width:22px; height:22px;
@@ -943,9 +945,9 @@
 
 <div id="video-modal-bg">
   <div id="camera-modal">
-    <div id="video-modal-drag" title="Arrastrá para mover">⋮⋮</div>
     <video id="video-preview" autoplay playsinline muted></video>
     <div id="video-modal-timer">00:00</div>
+    <select id="video-mic-select" title="Elegir micrófono"></select>
     <div id="camera-controls">
       <button class="btn" id="video-cancel">Cerrar</button>
       <button id="video-rec-btn">●</button>
@@ -2317,11 +2319,26 @@ function wireCard(el, card){
   // tap en video para verlo en pantalla completa
   const inlineVideo = el.querySelector('video.card-video-player');
   if(inlineVideo){
+    // arreglo de barra de progreso para videos grabados (igual que el audio):
+    // el formato webm grabado en el navegador a veces no trae la duración
+    // real en los metadatos, y el navegador la reporta como "Infinity" —
+    // eso hace que la barra de progreso aparezca siempre al final
+    function fixVideoDuration(videoEl){
+      if(videoEl.duration === Infinity || isNaN(videoEl.duration)){
+        videoEl.currentTime = 1e101;
+        videoEl.addEventListener('timeupdate', function fixDur(){
+          videoEl.currentTime = 0;
+          videoEl.removeEventListener('timeupdate', fixDur);
+        });
+      }
+    }
+    inlineVideo.addEventListener('loadedmetadata', ()=> fixVideoDuration(inlineVideo));
     inlineVideo.addEventListener('click', (e)=>{
       e.stopPropagation();
       const player = document.getElementById('video-fullscreen-player');
       player.src = inlineVideo.src;
       player.currentTime = 0;
+      player.addEventListener('loadedmetadata', ()=> fixVideoDuration(player), { once:true });
       document.getElementById('video-fullscreen-bg').classList.add('show');
       player.play().catch(()=>{});
     });
@@ -2985,11 +3002,15 @@ const videoPreviewEl = document.getElementById('video-preview');
 const videoTimerEl = document.getElementById('video-modal-timer');
 const videoRecBtn = document.getElementById('video-rec-btn');
 
-// arrastrar libremente la ventanita de grabación (antes y durante grabar)
-const videoModalDragHandle = document.getElementById('video-modal-drag');
+// arrastrar libremente la ventanita de grabación (antes y durante grabar),
+// desde cualquier parte de la ventana (como se arrastran las notas), no
+// solo desde una agarradera angosta arriba
+const cameraModalEl = document.getElementById('camera-modal');
 let videoModalDragging = false, videoModalDragStartX = 0, videoModalDragStartY = 0;
 let videoModalOrigLeft = 0, videoModalOrigTop = 0;
-videoModalDragHandle.addEventListener('pointerdown', (e)=>{
+cameraModalEl.addEventListener('pointerdown', (e)=>{
+  // no arrastrar si el toque fue sobre un botón, el selector de mic, o la esquina de resize
+  if(e.target.closest('button, select, #video-modal-resize')) return;
   videoModalDragging = true;
   const rect = videoModalBg.getBoundingClientRect();
   // pasar de anclaje right/bottom a left/top para poder moverla libremente
@@ -3001,10 +3022,10 @@ videoModalDragHandle.addEventListener('pointerdown', (e)=>{
   videoModalOrigTop = rect.top;
   videoModalDragStartX = e.clientX;
   videoModalDragStartY = e.clientY;
-  videoModalDragHandle.setPointerCapture(e.pointerId);
+  cameraModalEl.setPointerCapture(e.pointerId);
   e.preventDefault();
 });
-videoModalDragHandle.addEventListener('pointermove', (e)=>{
+cameraModalEl.addEventListener('pointermove', (e)=>{
   if(!videoModalDragging) return;
   const dx = e.clientX - videoModalDragStartX;
   const dy = e.clientY - videoModalDragStartY;
@@ -3015,10 +3036,10 @@ videoModalDragHandle.addEventListener('pointermove', (e)=>{
 });
 function stopVideoModalDrag(e){
   videoModalDragging = false;
-  try{ videoModalDragHandle.releasePointerCapture(e.pointerId); }catch(_){}
+  try{ cameraModalEl.releasePointerCapture(e.pointerId); }catch(_){}
 }
-videoModalDragHandle.addEventListener('pointerup', stopVideoModalDrag);
-videoModalDragHandle.addEventListener('pointercancel', stopVideoModalDrag);
+cameraModalEl.addEventListener('pointerup', stopVideoModalDrag);
+cameraModalEl.addEventListener('pointercancel', stopVideoModalDrag);
 
 // cambiar el tamaño de la ventanita arrastrando su esquina — funciona
 // tanto antes de grabar como durante la grabación en curso
@@ -3051,6 +3072,32 @@ function stopVideoModalResize(e){
 videoModalResizeHandle.addEventListener('pointerup', stopVideoModalResize);
 videoModalResizeHandle.addEventListener('pointercancel', stopVideoModalResize);
 
+const videoMicSelect = document.getElementById('video-mic-select');
+let selectedMicId = null;
+
+async function populateMicList(){
+  try{
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const mics = devices.filter(d=>d.kind === 'audioinput');
+    if(mics.length <= 1) { videoMicSelect.style.display = 'none'; return; }
+    videoMicSelect.style.display = 'block';
+    videoMicSelect.innerHTML = mics.map((m,i)=>
+      `<option value="${m.deviceId}">${m.label || ('Micrófono ' + (i+1))}</option>`
+    ).join('');
+    // marcar el que está siendo usado ahora mismo
+    if(videoModalStream){
+      const audioTrack = videoModalStream.getAudioTracks()[0];
+      const curId = audioTrack && audioTrack.getSettings ? audioTrack.getSettings().deviceId : null;
+      if(curId) videoMicSelect.value = curId;
+    }
+  }catch(e){ /* si no se puede listar, seguimos con el micrófono por defecto */ }
+}
+videoMicSelect.addEventListener('pointerdown', e=>e.stopPropagation());
+videoMicSelect.addEventListener('change', ()=>{
+  selectedMicId = videoMicSelect.value;
+  startVideoPreviewStream(selectedMicId);
+});
+
 async function openVideoModal(card, el){
   videoModalTarget = { card, el };
   videoModalBg.classList.add('show');
@@ -3059,15 +3106,16 @@ async function openVideoModal(card, el){
   videoModalRecording = false;
   videoRecBtn.classList.remove('recording');
   videoRecBtn.textContent = '●';
-  await startVideoPreviewStream();
+  await startVideoPreviewStream(selectedMicId);
+  populateMicList(); // recién ahora hay permiso, así que los nombres de los micrófonos ya se pueden leer
 }
 
-async function startVideoPreviewStream(){
+async function startVideoPreviewStream(micDeviceId){
   if(videoModalStream) videoModalStream.getTracks().forEach(t=>t.stop());
   try{
     videoModalStream = await navigator.mediaDevices.getUserMedia({
       video:{ facingMode: videoModalFacing, width:{ideal:640}, height:{ideal:360}, frameRate:{ideal:24,max:24} },
-      audio:true
+      audio: micDeviceId ? { deviceId:{ exact: micDeviceId } } : true
     });
     videoPreviewEl.srcObject = videoModalStream;
     // ajustar la proporción de la ventanita a la resolución REAL que devolvió
@@ -3100,7 +3148,7 @@ function closeVideoModal(){
 document.getElementById('video-cancel').addEventListener('click', closeVideoModal);
 document.getElementById('video-flip').addEventListener('click', ()=>{
   videoModalFacing = videoModalFacing === 'environment' ? 'user' : 'environment';
-  startVideoPreviewStream();
+  startVideoPreviewStream(selectedMicId);
 });
 
 videoRecBtn.addEventListener('click', async ()=>{
@@ -3276,9 +3324,12 @@ function addCard(type){
   const visibleH = scrollEl.clientHeight / zoomLevel;
   const centerX = scrollEl.scrollLeft/zoomLevel + visibleW/2;
   const centerY = scrollEl.scrollTop/zoomLevel + visibleH/2;
-  const x = centerX - 120 + (Math.random()*100 - 50);
-  const y = centerY - 80 + (Math.random()*80 - 40);
-  addCardAt(type, x, y);
+  // buscar un lugar libre cerca del centro de la vista, para que la tarjeta
+  // nueva aparezca al costado de las que ya existen, no encima tapándolas
+  const cardW = (type === 'note' || type === 'lyric') ? 380 : 240;
+  const cardH = 140;
+  const spot = findFreeSpot(centerX, centerY, cardW, cardH);
+  addCardAt(type, spot.x, spot.y);
 }
 
 function addCardAt(type, x, y){
@@ -3297,6 +3348,10 @@ function addCardAt(type, x, y){
     card.fontSize = 22;
     card.isTitle = true;
   }
+  // la tarjeta nueva siempre nace por encima de las demás, para que nunca
+  // quede tapada por una que ya estaba ahí
+  cardZCounter = Math.min(cardZCounter + 1, CARD_Z_MAX);
+  card.z = cardZCounter;
   cards.push(card);
   renderCard(card);
   flashNewCard(card.id);
