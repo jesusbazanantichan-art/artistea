@@ -579,11 +579,23 @@
     cursor:grab; touch-action:none;
   }
   #video-drag-overlay:active{ cursor:grabbing; }
-  #video-mic-select{
-    position:absolute; top:8px; right:8px; z-index:6; max-width:calc(100% - 16px);
-    font-family:'Inter',sans-serif; font-size:11px; color:#fff; background:rgba(0,0,0,0.55);
-    border:1px solid rgba(255,255,255,0.25); border-radius:8px; padding:4px 6px; cursor:pointer;
+  #video-modal-bg .device-pick-btn{
+    font-size:15px; padding:6px 10px; line-height:1;
   }
+  #video-modal-bg .device-pick-btn.active{ background:rgba(255,255,255,0.25); }
+  .device-pick-panel{
+    position:absolute; bottom:52px; left:8px; right:8px; z-index:8;
+    background:#1c1c1c; border:1px solid rgba(255,255,255,0.15); border-radius:10px;
+    padding:6px; max-height:160px; overflow-y:auto;
+    box-shadow:0 8px 24px rgba(0,0,0,0.4);
+  }
+  .device-pick-item{
+    display:block; width:100%; text-align:left; padding:8px 10px; border-radius:7px;
+    background:none; border:none; color:#fff; font-family:'Inter',sans-serif; font-size:12.5px;
+    cursor:pointer;
+  }
+  .device-pick-item:hover{ background:rgba(255,255,255,0.1); }
+  .device-pick-item.current{ background:rgba(255,255,255,0.18); font-weight:600; }
   #video-modal-resize{
     position:absolute; right:0; bottom:0; width:22px; height:22px;
     cursor:nwse-resize; touch-action:none; z-index:5;
@@ -665,11 +677,11 @@
     background:rgba(255,255,255,0.15); color:#fff; font-size:28px; cursor:pointer;
     flex:none; transition:background .12s, border-color .12s; box-shadow:0 0 0 2px rgba(255,255,255,0.3);
   }
-  #video-cancel, #video-flip{
+  #video-cancel{
     background:transparent; border:1px solid rgba(255,255,255,0.4); color:#fff;
     font-size:12px; padding:8px 14px; border-radius:20px; cursor:pointer; flex:none;
   }
-  #video-cancel:hover, #video-flip:hover{ background:rgba(255,255,255,0.12); }
+  #video-cancel:hover{ background:rgba(255,255,255,0.12); }
   #camera-modal{ position:relative; width:100%; max-width:500px; display:flex; flex-direction:column; align-items:center; gap:0; }
   #camera-preview{
     width:100%; max-height:70vh; object-fit:cover; border-radius:6px;
@@ -950,12 +962,14 @@
     <video id="video-preview" autoplay playsinline muted></video>
     <div id="video-drag-overlay" title="Arrastrá para mover"></div>
     <div id="video-modal-timer">00:00</div>
-    <select id="video-mic-select" title="Elegir micrófono"></select>
     <div id="camera-controls">
       <button class="btn" id="video-cancel">Cerrar</button>
       <button id="video-rec-btn">●</button>
-      <button class="btn" id="video-flip">↩</button>
+      <button class="btn device-pick-btn" id="video-mic-btn" title="Elegir micrófono">🎤</button>
+      <button class="btn device-pick-btn" id="video-cam-btn" title="Elegir cámara">🎥</button>
     </div>
+    <div class="device-pick-panel" id="video-mic-panel" style="display:none;"></div>
+    <div class="device-pick-panel" id="video-cam-panel" style="display:none;"></div>
     <div id="camera-status" style="position:absolute;bottom:8px;left:0;right:0;text-align:center;" id="video-status"></div>
     <div id="video-modal-resize" title="Arrastrá para cambiar el tamaño"></div>
   </div>
@@ -3092,31 +3106,77 @@ function stopVideoModalResize(e){
 videoModalResizeHandle.addEventListener('pointerup', stopVideoModalResize);
 videoModalResizeHandle.addEventListener('pointercancel', stopVideoModalResize);
 
-const videoMicSelect = document.getElementById('video-mic-select');
 let selectedMicId = null;
+let selectedCamId = null;
 
-async function populateMicList(){
+const videoMicBtn = document.getElementById('video-mic-btn');
+const videoCamBtn = document.getElementById('video-cam-btn');
+const videoMicPanel = document.getElementById('video-mic-panel');
+const videoCamPanel = document.getElementById('video-cam-panel');
+
+function closeDevicePanels(){
+  videoMicPanel.style.display = 'none';
+  videoCamPanel.style.display = 'none';
+  videoMicBtn.classList.remove('active');
+  videoCamBtn.classList.remove('active');
+}
+
+function getCurrentDeviceId(kind){
+  if(!videoModalStream) return null;
+  const track = kind === 'audioinput' ? videoModalStream.getAudioTracks()[0] : videoModalStream.getVideoTracks()[0];
+  return track && track.getSettings ? track.getSettings().deviceId : null;
+}
+
+async function populateDevicePanel(kind, panel, onPick){
+  const currentId = getCurrentDeviceId(kind);
   try{
     const devices = await navigator.mediaDevices.enumerateDevices();
-    const mics = devices.filter(d=>d.kind === 'audioinput');
-    if(mics.length <= 1) { videoMicSelect.style.display = 'none'; return; }
-    videoMicSelect.style.display = 'block';
-    videoMicSelect.innerHTML = mics.map((m,i)=>
-      `<option value="${m.deviceId}">${m.label || ('Micrófono ' + (i+1))}</option>`
-    ).join('');
-    // marcar el que está siendo usado ahora mismo
-    if(videoModalStream){
-      const audioTrack = videoModalStream.getAudioTracks()[0];
-      const curId = audioTrack && audioTrack.getSettings ? audioTrack.getSettings().deviceId : null;
-      if(curId) videoMicSelect.value = curId;
+    const list = devices.filter(d=>d.kind === kind);
+    panel.innerHTML = '';
+    if(list.length === 0){
+      panel.innerHTML = '<div class="device-pick-item">No se encontraron dispositivos</div>';
+      return;
     }
-  }catch(e){ /* si no se puede listar, seguimos con el micrófono por defecto */ }
+    list.forEach((d,i)=>{
+      const btn = document.createElement('button');
+      btn.className = 'device-pick-item' + (d.deviceId === currentId ? ' current' : '');
+      btn.textContent = d.label || ((kind==='audioinput' ? 'Micrófono ' : 'Cámara ') + (i+1));
+      btn.addEventListener('click', e=>{ e.stopPropagation(); onPick(d.deviceId); closeDevicePanels(); });
+      panel.appendChild(btn);
+    });
+  }catch(e){
+    panel.innerHTML = '<div class="device-pick-item">No se pudo leer la lista</div>';
+  }
 }
-videoMicSelect.addEventListener('pointerdown', e=>e.stopPropagation());
-videoMicSelect.addEventListener('change', ()=>{
-  selectedMicId = videoMicSelect.value;
-  startVideoPreviewStream(selectedMicId);
+
+videoMicBtn.addEventListener('pointerdown', e=>e.stopPropagation());
+videoMicBtn.addEventListener('click', async e=>{
+  e.stopPropagation();
+  const wasOpen = videoMicPanel.style.display !== 'none';
+  closeDevicePanels();
+  if(wasOpen) return;
+  videoMicPanel.style.display = 'block';
+  videoMicBtn.classList.add('active');
+  await populateDevicePanel('audioinput', videoMicPanel, (id)=>{
+    selectedMicId = id;
+    startVideoPreviewStream(selectedMicId, selectedCamId);
+  });
 });
+videoCamBtn.addEventListener('pointerdown', e=>e.stopPropagation());
+videoCamBtn.addEventListener('click', async e=>{
+  e.stopPropagation();
+  const wasOpen = videoCamPanel.style.display !== 'none';
+  closeDevicePanels();
+  if(wasOpen) return;
+  videoCamPanel.style.display = 'block';
+  videoCamBtn.classList.add('active');
+  await populateDevicePanel('videoinput', videoCamPanel, (id)=>{
+    selectedCamId = id;
+    startVideoPreviewStream(selectedMicId, selectedCamId);
+  });
+});
+videoMicPanel.addEventListener('pointerdown', e=>e.stopPropagation());
+videoCamPanel.addEventListener('pointerdown', e=>e.stopPropagation());
 
 async function openVideoModal(card, el){
   videoModalTarget = { card, el };
@@ -3126,15 +3186,18 @@ async function openVideoModal(card, el){
   videoModalRecording = false;
   videoRecBtn.classList.remove('recording');
   videoRecBtn.textContent = '●';
-  await startVideoPreviewStream(selectedMicId);
-  populateMicList(); // recién ahora hay permiso, así que los nombres de los micrófonos ya se pueden leer
+  closeDevicePanels();
+  await startVideoPreviewStream(selectedMicId, selectedCamId);
 }
 
-async function startVideoPreviewStream(micDeviceId){
+async function startVideoPreviewStream(micDeviceId, camDeviceId){
   if(videoModalStream) videoModalStream.getTracks().forEach(t=>t.stop());
   try{
+    const videoConstraints = camDeviceId
+      ? { deviceId:{ exact: camDeviceId }, width:{ideal:640}, height:{ideal:360}, frameRate:{ideal:24,max:24} }
+      : { facingMode: videoModalFacing, width:{ideal:640}, height:{ideal:360}, frameRate:{ideal:24,max:24} };
     videoModalStream = await navigator.mediaDevices.getUserMedia({
-      video:{ facingMode: videoModalFacing, width:{ideal:640}, height:{ideal:360}, frameRate:{ideal:24,max:24} },
+      video: videoConstraints,
       audio: micDeviceId ? { deviceId:{ exact: micDeviceId } } : true
     });
     videoPreviewEl.srcObject = videoModalStream;
@@ -3164,13 +3227,10 @@ function closeVideoModal(){
   videoModalBg.classList.remove('show');
   videoModalTarget = null;
   videoModalRecording = false;
+  closeDevicePanels();
 }
 
 document.getElementById('video-cancel').addEventListener('click', closeVideoModal);
-document.getElementById('video-flip').addEventListener('click', ()=>{
-  videoModalFacing = videoModalFacing === 'environment' ? 'user' : 'environment';
-  startVideoPreviewStream(selectedMicId);
-});
 
 videoRecBtn.addEventListener('click', async ()=>{
   if(videoModalRecording){
@@ -3530,6 +3590,9 @@ document.getElementById('proj-name-wrap').addEventListener('click', (e)=>{
 });
 // click afuera cierra la lista
 document.addEventListener('click', (e)=>{
+  if(!e.target.closest('#video-mic-btn, #video-mic-panel, #video-cam-btn, #video-cam-panel')){
+    closeDevicePanels();
+  }
   if(!e.target.closest('#proj-name-wrap')) projDropdownList.classList.remove('show');
 });
 // botón aparte para renombrar el proyecto actual
